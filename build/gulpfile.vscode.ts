@@ -443,11 +443,12 @@ function packageTask(platform: string, arch: string, sourceFolderName: string, d
 				}))
 				.pipe(rename(f => { f.dirname = 'bin/copilot-shim'; f.basename = 'copilot'; f.extname = ''; })));
 
-			result = merge(result, gulp.src('.build/policies/win32/**', { base: '.build/policies/win32' })
+			result = merge(result, gulp.src('.build/policies/win32/**', { base: '.build/policies/win32', allowEmpty: true })
 				.pipe(rename(f => f.dirname = `policies/${f.dirname}`)));
 
-			if (quality === 'stable' || quality === 'insider') {
-				result = merge(result, gulp.src('.build/win32/appx/**', { base: '.build/win32' }));
+			const contextMenu = (product as { win32ContextMenu?: Record<string, { clsid?: string }> }).win32ContextMenu;
+			if ((quality === 'stable' || quality === 'insider') && contextMenu?.[arch]?.clsid) {
+				result = merge(result, gulp.src('.build/win32/appx/**', { base: '.build/win32', allowEmpty: true }));
 				const rawVersion = version.replace(/-\w+$/, '').split('.');
 				const appxVersion = `${rawVersion[0]}.0.${rawVersion[1]}.${rawVersion[2]}`;
 				result = merge(result, gulp.src('resources/win32/appx/AppxManifest.xml', { base: '.' })
@@ -458,7 +459,7 @@ function packageTask(platform: string, arch: string, sourceFolderName: string, d
 					.pipe(replace('@@ApplicationIdShort@@', product.win32RegValueName))
 					.pipe(replace('@@ApplicationExe@@', product.nameShort + '.exe'))
 					.pipe(replace('@@FileExplorerContextMenuID@@', quality === 'stable' ? 'OpenWithCode' : 'OpenWithCodeInsiders'))
-					.pipe(replace('@@FileExplorerContextMenuCLSID@@', (product as { win32ContextMenu?: Record<string, { clsid: string }> }).win32ContextMenu![arch].clsid))
+					.pipe(replace('@@FileExplorerContextMenuCLSID@@', contextMenu![arch].clsid!))
 					.pipe(replace('@@FileExplorerContextMenuDLL@@', `${quality === 'stable' ? 'code' : 'code_insider'}_explorer_command_${arch}.dll`))
 					.pipe(rename(f => f.dirname = `appx/manifest`)));
 			}
@@ -577,12 +578,17 @@ function prepareCopilotRipgrepShimTask(platform: string, arch: string, destinati
 function generateNodeCompileCacheTask(platform: string, destinationFolderName: string) {
 	const outputDirectory = path.join(path.dirname(root), destinationFolderName);
 
-	return () => generateNodeCompileCache(
-		platform,
-		outputDirectory,
-		util.getVersionedResourcesFolder(platform, commit!),
-		product
-	);
+	return () => {
+		if (process.env['VSCODE_SKIP_NODE_COMPILE_CACHE'] === '1') {
+			return Promise.resolve();
+		}
+		return generateNodeCompileCache(
+			platform,
+			outputDirectory,
+			util.getVersionedResourcesFolder(platform, commit!),
+			product
+		);
+	};
 }
 
 const buildRoot = path.dirname(root);

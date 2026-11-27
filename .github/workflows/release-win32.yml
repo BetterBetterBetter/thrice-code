@@ -1,0 +1,61 @@
+name: Release Windows
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  win32-x64:
+    runs-on: windows-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12.16.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Put signtool on PATH
+        shell: pwsh
+        run: |
+          $signtool = Get-ChildItem -Path "C:\Program Files (x86)\Windows Kits\10\bin" -Recurse -Filter signtool.exe |
+            Where-Object { $_.FullName -match '\\x64\\signtool.exe$' } |
+            Sort-Object FullName -Descending |
+            Select-Object -First 1
+          if (-not $signtool) { throw "signtool.exe was not found" }
+          Add-Content -Path $env:GITHUB_PATH -Value $signtool.DirectoryName
+
+      - name: Package Windows x64
+        run: pnpm run gulp vscode-win32-x64
+        env:
+          VSCODE_SKIP_NODE_COMPILE_CACHE: "1"
+
+      - name: Zip the app and write the update feed
+        shell: pwsh
+        run: |
+          $parent = Split-Path -Parent (Get-Location)
+          $app = Join-Path $parent "VSCode-win32-x64"
+          if (-not (Test-Path (Join-Path $app "Thrice Code.exe"))) {
+            throw "Thrice Code.exe was not produced"
+          }
+          $zip = Join-Path (Get-Location) "ThriceCode-win32-x64.zip"
+          if (Test-Path $zip) { Remove-Item $zip }
+          tar.exe -a -c -f $zip -C $app .
+          $commit = git rev-parse HEAD
+          $published = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
+          node build/thrice/desktop/write-release-feed.mjs win32-x64-archive v1.149.0 $commit 1.149.0 ThriceCode-win32-x64.zip $published
+
+      - name: Upload to the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload v1.149.0 ThriceCode-win32-x64.zip win32-x64-archive.json --clobber --repo BetterBetterBetter/thrice-code
