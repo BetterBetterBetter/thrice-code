@@ -1,4 +1,6 @@
 .DS_Store
+# Generated Jev indexes are larger than GitHub's file limit
+**/.jev/dependencies.json
 .cache
 npm-debug.log
 Thumbs.db
