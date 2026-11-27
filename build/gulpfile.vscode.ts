@@ -518,6 +518,10 @@ function patchWin32DependenciesTask(destinationFolderName: string) {
 	const cwd = path.join(path.dirname(root), destinationFolderName);
 
 	return async () => {
+		if (process.platform !== 'win32') {
+			console.log('Skipping Windows resource edits because signtool is only available on Windows.');
+			return;
+		}
 		const versionedResourcesFolder = util.getVersionedResourcesFolder('win32', commit!);
 		const deps = (await Promise.all([
 			glob('**/*.node', { cwd, ignore: 'extensions/node_modules/@parcel/watcher/**' }),
