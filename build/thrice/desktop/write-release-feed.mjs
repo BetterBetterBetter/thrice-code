@@ -9,7 +9,9 @@
 // product.json updateUrl is https://github.com/<owner>/<repo>/releases.
 // The app requests releases/latest/download/<platform>.json and compares
 // `version` with its own commit. Upload this file next to the build asset
-// on every release. Platform names match the updater:
+// on every release. GitHub rejects a tag that is only 40 or 64 hex
+// characters, so pass a version tag such as v1.149.0 and put the commit
+// in the commit argument. Platform names match the updater:
 //   darwin, darwin-arm64, win32-x64, win32-arm64, win32-x64-user,
 //   win32-arm64-user, linux-x64, linux-arm64, linux-armhf
 // Insider builds use <quality>-<platform>.json.

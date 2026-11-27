@@ -9,7 +9,10 @@ import * as os from 'os';
 import * as path from 'path';
 
 const nodeCompileCacheKinds = ['main', 'extension-host', 'shared-process', 'pty-host', 'agent-host'] as const;
-const nodeCompileCacheTagPattern = /^v\d+\.\d+\.\d+-(arm64|x64)-[0-9a-f]{8}$/;
+// Node names the directory `v<version>-<arch>-<cache tag>` and, on platforms with
+// uids, appends `-<uid>` unless portable mode omits it. Electron 43's Node still
+// appends the uid when portable is set, so the packaged cache keeps that suffix.
+const nodeCompileCacheTagPattern = /^v\d+\.\d+\.\d+-(arm64|x64)-[0-9a-f]{8}(?:-\d+)?$/;
 const nodeCompileCacheEntryPattern = /^[0-9a-f]{8}$/;
 // Node writes each entry to `<entry>.XXXXXX` (uv_fs_mkstemp) and renames it into place, so a process that is
 // stopped while it flushes on exit can leave one behind. The last completed write of that entry is intact.

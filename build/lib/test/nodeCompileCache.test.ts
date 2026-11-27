@@ -45,4 +45,18 @@ suite('validateNodeCompileCache', () => {
 
 		await assert.rejects(validateNodeCompileCache(root, process.arch), /unexpected shared-process cache entries in .*: unexpected\.txt\./);
 	});
+
+	test('accepts a tag that still includes the user id', async () => {
+		const uidTag = `${tag}-501`;
+		for (const kind of kinds) {
+			const cacheDirectory = path.join(root, kind, uidTag);
+			await fs.promises.mkdir(cacheDirectory, { recursive: true });
+			await fs.promises.writeFile(path.join(cacheDirectory, '6664eb6b'), 'entry');
+			await fs.promises.rm(path.join(root, kind, tag), { recursive: true });
+		}
+
+		const count = await validateNodeCompileCache(root, process.arch);
+
+		assert.strictEqual(count, kinds.length);
+	});
 });
