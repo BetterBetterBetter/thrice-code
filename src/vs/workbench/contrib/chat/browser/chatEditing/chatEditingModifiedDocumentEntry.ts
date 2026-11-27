@@ -41,7 +41,7 @@ import { ChatEditingCodeEditorIntegration } from './chatEditingCodeEditorIntegra
 import { ChatEditingCustomTextEditorIntegration } from './chatEditingCustomTextEditorIntegration.js';
 import { AbstractChatEditingModifiedFileEntry } from './chatEditingModifiedFileEntry.js';
 import { CustomEditorInput } from '../../../customEditor/browser/customEditorInput.js';
-import { ChatEditingTextModelChangeService } from './chatEditingTextModelChangeService.js';
+import { ChatEditingTextModelChangeService, isDiskReload } from './chatEditingTextModelChangeService.js';
 import { ChatEditingSnapshotTextModelContentProvider, ChatEditingTextModelContentProvider } from './chatEditingTextModelContentProviders.js';
 
 interface IMultiDiffEntryDelegate {
@@ -138,7 +138,7 @@ export class ChatEditingModifiedDocumentEntry extends AbstractChatEditingModifie
 		);
 
 		this._textModelChangeService = this._register(instantiationService.createInstance(ChatEditingTextModelChangeService,
-			this.originalModel, this.modifiedModel, this._stateObs, () => this._isExternalEditInProgress));
+			this.originalModel, this.modifiedModel, this._stateObs, event => this._isExternalEditInProgress && (!this._externalEditFromDiskOnly || isDiskReload(event))));
 
 		this._register(this._textModelChangeService.onDidAcceptOrRejectAllHunks(action => {
 			this._stateObs.set(action, undefined);

@@ -3214,11 +3214,25 @@ export class ChatSubagentToolInvocationData {
 	prompt?: string;
 	result?: string;
 	modelName?: string;
+	chatProvider?: string;
 	constructor(description?: string, agentName?: string, prompt?: string, result?: string) {
 		this.description = description;
 		this.agentName = agentName;
 		this.prompt = prompt;
 		this.result = result;
+	}
+}
+
+export class ChatFileEditToolInvocationData {
+	uri: vscode.Uri;
+	added: number;
+	removed: number;
+	change: 'add' | 'update' | 'delete';
+	constructor(uri: vscode.Uri, added: number, removed: number, change: 'add' | 'update' | 'delete') {
+		this.uri = uri;
+		this.added = added;
+		this.removed = removed;
+		this.change = change;
 	}
 }
 

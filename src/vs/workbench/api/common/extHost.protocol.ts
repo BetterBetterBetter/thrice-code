@@ -1715,7 +1715,14 @@ export interface IChatAgentProgressShape {
 	$handleAnchorResolve(requestId: string, handle: string, anchor: Dto<IChatContentInlineReference>): void;
 }
 
+export interface IChatSteeringMessageDto {
+	readonly id: string;
+	readonly prompt: string;
+}
+
 export interface MainThreadChatAgentsShape2 extends IChatAgentProgressShape, IDisposable {
+	/** The running request registered (or dropped) a steering handler. */
+	$setSteerable(requestId: string, steerable: boolean): void;
 	$registerAgent(handle: number, extension: ExtensionIdentifier, id: string, metadata: IExtensionChatAgentMetadata, dynamicProps: IDynamicChatAgentProps | undefined): void;
 	$registerChatParticipantDetectionProvider(handle: number): void;
 	$unregisterChatParticipantDetectionProvider(handle: number): void;
@@ -1809,6 +1816,8 @@ export interface ExtHostChatAgentsShape2 {
 	$provideSourceFolders(handle: number, sessionResource: UriComponents, type: string, token: CancellationToken): Promise<IChatSessionCustomizationSourceFolderDto[] | undefined>;
 	$setRequestTools(requestId: string, tools: UserSelectedTools): void;
 	$setYieldRequested(requestId: string, value: boolean): void;
+	/** Offers a steering message to the running request; resolves `true` when its handler took it. */
+	$steer(requestId: string, message: IChatSteeringMessageDto): Promise<boolean>;
 	$acceptActiveChatSession(sessionResource: UriComponents | undefined): void;
 	$onDidChangeCustomAgents(): void;
 	$onDidChangeInstructions(): void;

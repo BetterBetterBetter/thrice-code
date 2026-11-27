@@ -117,6 +117,9 @@ function hasDraftInput(model: ChatModel): boolean {
 class CancellableRequest implements IDisposable {
 	private readonly _yieldRequested: ISettableObservable<boolean> = observableValue(this, false);
 
+	/** The agent handling this request, once it is known; used to offer it steering messages. */
+	agentId: string | undefined;
+
 	get yieldRequested(): IObservable<boolean> {
 		return this._yieldRequested;
 	}
@@ -604,7 +607,9 @@ export class ChatService extends Disposable implements IChatService {
 	 * options are removed.
 	 */
 	async getLocalSessionHistory(): Promise<IChatDetail[]> {
-		const liveSessionItems = await this.getLiveSessionItems();
+		// A new chat stays out of history until it has a request; persisted entries already skip empty ones.
+		const liveSessionItems = (await this.getLiveSessionItems())
+			.filter(item => this._sessionModels.get(item.sessionResource)?.hasRequests !== false);
 		const historySessionItems = await this.getHistorySessionItems();
 
 		return [...liveSessionItems, ...historySessionItems];
@@ -1578,7 +1583,7 @@ export class ChatService extends Disposable implements IChatService {
 		model.addPendingRequest(requestModel, options.queue ?? ChatRequestQueueKind.Queued, { ...options, queue: undefined });
 
 		if (options.queue === ChatRequestQueueKind.Steering) {
-			this.setYieldRequested(sessionResource);
+			this._steerOrYield(model, requestModel);
 		}
 
 		this.trace('sendRequest', `Queued message for session ${sessionResource}`);
@@ -2253,6 +2258,7 @@ export class ChatService extends Disposable implements IChatService {
 					this.generateInitialChatTitleIfNeeded(model, requestProps, defaultAgent, token);
 					const pendingRequest = this._pendingRequests.get(sessionResource);
 					if (pendingRequest) {
+						pendingRequest.agentId = agent.id;
 						let yieldForwardedRequestId: string | undefined;
 						store.add(autorun(reader => {
 							const yieldRequested = pendingRequest.yieldRequested.read(reader);
@@ -2789,6 +2795,42 @@ export class ChatService extends Disposable implements IChatService {
 		if (responseCompletePromise) {
 			await raceTimeout(responseCompletePromise, 1000);
 		}
+	}
+
+	/**
+	 * Steering: when the running request's agent accepts steering, hand it the message so it joins
+	 * the running turn (the way agent CLIs steer); otherwise ask the request to yield, after which
+	 * the message is sent as its own request.
+	 */
+	private _steerOrYield(model: ChatModel, steering: ChatRequestModel): void {
+		const sessionResource = model.sessionResource;
+		const active = this._pendingRequests.get(sessionResource);
+		const agentId = active?.agentId;
+		const requestId = active?.requestId;
+		if (!active || !agentId || !requestId || !this.chatAgentService.isSteerable(requestId)) {
+			this.setYieldRequested(sessionResource);
+			return;
+		}
+		const isStillQueued = () => model.getPendingRequests().some(p => p.request.id === steering.id);
+		this.chatAgentService.steer(agentId, requestId, { id: steering.id, prompt: steering.message.text }).then(accepted => {
+			if (!isStillQueued()) {
+				// Removed by the user, or already sent because the request ended first.
+				return;
+			}
+			if (!accepted) {
+				if (this._pendingRequests.get(sessionResource) === active) {
+					this.setYieldRequested(sessionResource);
+				}
+				return;
+			}
+			this.trace('steer', `Delivered steering message into request ${requestId}`);
+			model.removePendingRequest(steering.id);
+			const deferred = this._queuedRequestDeferreds.get(steering.id);
+			if (deferred) {
+				this._queuedRequestDeferreds.delete(steering.id);
+				deferred.complete({ kind: 'rejected', reason: 'Delivered into the running request' });
+			}
+		}, onUnexpectedError);
 	}
 
 	setYieldRequested(sessionResource: URI): void {

@@ -4,6 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { $, addDisposableListener, append, clearNode } from '../../../../../../base/browser/dom.js';
+import { Codicon } from '../../../../../../base/common/codicons.js';
 import { RunOnceScheduler } from '../../../../../../base/common/async.js';
 import { Disposable, DisposableStore, MutableDisposable } from '../../../../../../base/common/lifecycle.js';
 import { autorun } from '../../../../../../base/common/observable.js';
@@ -18,6 +19,7 @@ import { IChatService } from '../../../common/chatService/chatService.js';
 import { IChatModel } from '../../../common/model/chatModel.js';
 import { providerLogoIcon } from '../../../common/thriceProviderLogos.js';
 import { subagentChatsInModel, subagentEditorResource } from '../../widgetHosts/viewPane/chatSubagentChats.js';
+import { ChatInputStackSlot, setChatInputStackSlot } from './chatInputStack.js';
 import { IRunningSubagentEntry, isActiveSubagentStatus, mergeSubagentEntries, subagentChildIcon, subagentChildLabel, subagentParentIcon, subagentSessionProvider, subagentStatus, subagentStatusClass, subagentStatusLabel } from './runningSubagentsEntries.js';
 
 /**
@@ -34,7 +36,7 @@ export async function openAuxiliaryChatSession(viewsService: IViewsService, chat
 	await chatWidgetService.openSession(resource);
 }
 
-/** The thin row of sub-agents this chat spawned, just above the text field. */
+/** A collapsible list of the sub-agents this chat spawned, docked above the text field. */
 export class RunningSubagentsRow extends Disposable {
 	private readonly listeners = this._register(new DisposableStore());
 	private readonly modelListener = this._register(new MutableDisposable());
@@ -42,6 +44,8 @@ export class RunningSubagentsRow extends Disposable {
 	private readonly invocationWatcher = this._register(new MutableDisposable());
 	private readonly refreshScheduler = this._register(new RunOnceScheduler(() => this.refresh(), 0));
 	private watchedSession: string | undefined;
+	/** Folded to a summary line by default, like the changed-files list. */
+	private collapsed = true;
 
 	constructor(
 		private readonly container: HTMLElement,
@@ -73,11 +77,49 @@ export class RunningSubagentsRow extends Disposable {
 		const spawned = resource ? this.spawnedChats(resource) : [];
 		this.listeners.clear();
 		clearNode(this.container);
-		this.container.hidden = spawned.length === 0;
+		const visible = spawned.length > 0;
+		this.container.hidden = !visible;
+		setChatInputStackSlot(this.container, visible ? ChatInputStackSlot.Docked : ChatInputStackSlot.Empty);
+		if (!visible) {
+			return;
+		}
+
+		const panel = append(this.container, $('.chat-running-subagents-container'));
+		const working = spawned.filter(session => session.status === 'working').length;
+		const waiting = spawned.filter(session => session.status === 'inputNeeded').length;
+		const title = spawned.length === 1
+			? localize('chatRunningSubagents.one', "1 agent")
+			: localize('chatRunningSubagents.many', "{0} agents", spawned.length);
+		const details: string[] = [];
+		if (working > 0) {
+			details.push(localize('chatRunningSubagents.working', "{0} working", working));
+		}
+		if (waiting > 0) {
+			details.push(localize('chatRunningSubagents.waiting', "{0} waiting", waiting));
+		}
+		const header = append(panel, $('button.chat-running-subagents-overview', {
+			type: 'button',
+			'aria-expanded': String(!this.collapsed),
+			'aria-label': localize('chatRunningSubagents.toggle', "Toggle agents. {0}", [title, ...details].join(', ')),
+		}));
+		const chevron = append(header, $('span.chat-running-subagents-chevron'));
+		chevron.classList.add(...ThemeIcon.asClassNameArray(this.collapsed ? Codicon.chevronRight : Codicon.chevronDown));
+		append(header, $('span.chat-running-subagents-title', undefined, title));
+		if (details.length) {
+			append(header, $('span.chat-running-subagents-details', undefined, details.join(' · ')));
+		}
+		this.listeners.add(addDisposableListener(header, 'click', () => {
+			this.collapsed = !this.collapsed;
+			this.refresh();
+		}));
+
+		const list = append(panel, $('.chat-running-subagents-list', { role: 'list' }));
+		list.classList.toggle('collapsed', this.collapsed);
 		for (const session of spawned) {
 			const statusLabel = subagentStatusLabel(session.status);
-			const button = append(this.container, $('button.chat-running-subagent', {
+			const button = append(list, $('button.chat-running-subagent', {
 				type: 'button',
+				role: 'listitem',
 				title: session.label,
 				'aria-label': localize('chatRunningSubagentAriaLabel', "{0}, {1}", session.label, statusLabel),
 			}));
@@ -87,6 +129,8 @@ export class RunningSubagentsRow extends Disposable {
 			const status = append(mark, $('span.chat-running-subagent-status', { title: statusLabel }));
 			status.classList.add(subagentStatusClass(session.status));
 			append(button, $('span.chat-running-subagent-title', undefined, session.label));
+			const stateLabel = append(button, $('span.chat-running-subagent-state', undefined, statusLabel));
+			stateLabel.classList.add(subagentStatusClass(session.status));
 			const target = session.target;
 			if (!target) {
 				button.setAttribute('disabled', 'true');

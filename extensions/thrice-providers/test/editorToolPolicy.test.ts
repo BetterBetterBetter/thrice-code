@@ -91,6 +91,72 @@ test('the editor rule is added even when the diagram preface is already present'
 	}
 });
 
+test('agent tools are listed by depth, and a cancellation is passed on', () => {
+	const names = (options?: { agents?: boolean; canSpawn?: boolean }) => {
+		const listed = interpretMcp({ jsonrpc: '2.0', id: 2, method: 'tools/list' }, options);
+		assert.equal(listed.kind, 'reply');
+		return listed.kind === 'reply' ? ((listed.message as { result: { tools: { name: string }[] } }).result.tools.map(item => item.name)) : [];
+	};
+	assert.equal(names().includes('listAgents'), false);
+	assert.equal(names({ agents: true }).includes('listAgents'), true);
+	assert.equal(names({ agents: true }).includes('runAgent'), false);
+	assert.equal(names({ agents: true, canSpawn: true }).includes('runAgent'), true);
+	assert.deepEqual(interpretMcp({ jsonrpc: '2.0', method: 'notifications/cancelled', params: { requestId: 7 } }), { kind: 'cancel', requestId: 7 });
+	assert.deepEqual(interpretMcp({ jsonrpc: '2.0', method: 'notifications/cancelled', params: {} }), { kind: 'none' });
+});
+
+test('a launch that may start agents says so, and codex waits long enough for them', () => {
+	const agents = { ...launch, agentTools: true };
+	const claude = withEditorTools('claude', ['--', 'hello'], agents);
+	assert.match(claude[claude.indexOf('--append-system-prompt') + 1], /mcp__thrice__runAgent/);
+	assert.match(claude.at(-1) ?? '', /mcp__thrice__listAgents/);
+	assert.doesNotMatch(withEditorTools('claude', ['--', 'hello'], launch).at(-1) ?? '', /runAgent/);
+	const codex = withEditorTools('codex', ['exec', '--', 'hello'], agents);
+	assert.equal(codex.includes('mcp_servers.thrice.tool_timeout_sec=3600'), true);
+	assert.match(codex.at(-1) ?? '', /runAgent/);
+});
+
+test('a claude launch that cannot skip permissions is allowed the read-only thrice tools only', async () => {
+	const { READ_ONLY_THRICE_TOOLS } = await import('../src/editorToolPolicy.ts');
+	const readOnly = withEditorTools('claude', ['--model', 'x', '-p', '--', 'hello'], launch);
+	const allowed = readOnly[readOnly.indexOf('--allowedTools') + 1].split(',');
+	assert.ok(readOnly.indexOf('--allowedTools') < readOnly.indexOf('--'));
+	assert.deepEqual(allowed, READ_ONLY_THRICE_TOOLS.map(name => `mcp__thrice__${name}`));
+	assert.equal(allowed.includes('mcp__thrice__writeEditor'), false);
+	assert.equal(allowed.includes('mcp__thrice__spawnTerminal'), false);
+	const skipping = withEditorTools('claude', ['--dangerously-skip-permissions', '-p', '--', 'hello'], launch);
+	assert.equal(skipping.includes('--allowedTools'), false);
+});
+
+test('opencode gets the thrice server through its config environment, keeping the user\'s', async () => {
+	const { editorToolEnvironment } = await import('../src/editorToolPolicy.ts');
+	assert.deepEqual(editorToolEnvironment('claude', launch), {});
+	assert.deepEqual(editorToolEnvironment('opencode', undefined), {});
+	const env = editorToolEnvironment('opencode', launch, { OPENCODE_CONFIG_CONTENT: JSON.stringify({ model: 'agentcli/grok', mcp: { mine: { type: 'local', command: ['x'] } } }) });
+	const config = JSON.parse(env.OPENCODE_CONFIG_CONTENT) as { model: string; mcp: Record<string, { command: string[] }> };
+	assert.equal(config.model, 'agentcli/grok');
+	assert.deepEqual(config.mcp.mine.command, ['x']);
+	assert.deepEqual(config.mcp.thrice.command, ['node', '/tmp/shim.mjs', '4312', 'token']);
+	assert.ok(JSON.parse(editorToolEnvironment('opencode', launch, { OPENCODE_CONFIG_CONTENT: '{' }).OPENCODE_CONFIG_CONTENT).mcp.thrice);
+	const args = withEditorTools('opencode', ['run', '--format', 'json', '-m', 'grok', 'hello'], { ...launch, agentTools: true });
+	assert.match(args.at(-1) ?? '', /^hello\n\n.*thrice_spawnTerminal.*thrice_runAgent/s);
+	assert.equal(args.length, 6);
+});
+
+test('an agent\'s own terminals are tracked so they can be closed, and the notes say to close them', async () => {
+	const { spawnedTerminalId, TERMINAL_CLOSE_RULE, claudeToolNote, codexToolNote, opencodeToolNote, SESSION_TOOLS, TERMINAL_TOOL } = await import('../src/editorToolPolicy.ts');
+	assert.equal(spawnedTerminalId('Opened the terminal panel on terminal 12 "npm". Call readTerminal or waitTerminal with id 12 for output.'), 12);
+	assert.equal(spawnedTerminalId('Error: No integrated terminal with id 12.'), undefined);
+	assert.equal(spawnedTerminalId('Sent text to terminal 3.'), undefined);
+	const spawn = SESSION_TOOLS.find(item => item.name === SPAWN_TOOL_NAME);
+	assert.equal(spawn?.inputSchema.properties.for_user?.type, 'boolean');
+	assert.equal(TERMINAL_TOOL.inputSchema.properties.for_user?.type, 'boolean');
+	for (const note of [claudeToolNote(), codexToolNote(), opencodeToolNote()]) {
+		assert.ok(note.includes(TERMINAL_CLOSE_RULE));
+		assert.ok(note.startsWith(EDITOR_TOOL_INSTRUCTION));
+	}
+});
+
 test('the session shim answers initialize as one json line', async () => {
 	const source = readFileSync(new URL('../src/editorTools.ts', import.meta.url), 'utf8');
 	const start = source.indexOf('const SHIM = `');
@@ -137,6 +203,63 @@ test('the session shim answers initialize as one json line', async () => {
 		const body = await stdout;
 		const parsed = JSON.parse(body.slice(0, body.indexOf('\n'))) as { result?: { serverInfo?: { name?: string } } };
 		assert.equal(parsed.result?.serverInfo?.name, 'thrice');
+	} finally {
+		child.kill();
+		server.close();
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test('the session shim does not hold a quick call behind a slow one', async () => {
+	const source = readFileSync(new URL('../src/editorTools.ts', import.meta.url), 'utf8');
+	const start = source.indexOf('const SHIM = `');
+	const end = source.indexOf('`;', start);
+	const shim = eval(source.slice(start + 'const SHIM = '.length, end + 1)) as string;
+	const dir = mkdtempSync(join(tmpdir(), 'thrice-mcp-'));
+	const shimPath = join(dir, 'shim.mjs');
+	writeFileSync(shimPath, shim);
+	let releaseSlow: (() => void) | undefined;
+	const server = createServer((req, res) => {
+		const chunks: Buffer[] = [];
+		req.on('data', chunk => chunks.push(chunk));
+		req.on('end', () => {
+			const message = JSON.parse(Buffer.concat(chunks).toString('utf8')) as { id: number };
+			const reply = () => res.end(mcpStdioFrame({ jsonrpc: '2.0', id: message.id, result: {} }));
+			if (message.id === 1) {
+				releaseSlow = reply;
+			} else {
+				reply();
+			}
+		});
+	});
+	await new Promise<void>(resolve => server.listen(0, '127.0.0.1', () => resolve()));
+	const address = server.address();
+	const port = address && typeof address === 'object' ? address.port : 0;
+	const child = spawn(process.execPath, [shimPath, String(port), 'token'], { stdio: ['pipe', 'pipe', 'pipe'] });
+	const ids: number[] = [];
+	const both = new Promise<void>((resolve, reject) => {
+		const timer = setTimeout(() => reject(new Error(`shim answered ${JSON.stringify(ids)}`)), 3000);
+		let body = '';
+		child.stdout.on('data', chunk => {
+			body += chunk.toString('utf8');
+			const lines = body.split('\n');
+			body = lines.pop() ?? '';
+			for (const line of lines) {
+				ids.push((JSON.parse(line) as { id: number }).id);
+				if (ids.length === 1) {
+					releaseSlow?.();
+				}
+				if (ids.length === 2) {
+					clearTimeout(timer);
+					resolve();
+				}
+			}
+		});
+	});
+	child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call' })}\n${JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'ping' })}\n`);
+	try {
+		await both;
+		assert.deepEqual(ids, [2, 1]);
 	} finally {
 		child.kill();
 		server.close();

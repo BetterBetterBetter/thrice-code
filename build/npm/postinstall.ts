@@ -285,10 +285,13 @@ async function main() {
 		log('.', `Created ${claudeMdLinkType} .claude/CLAUDE.md -> .github/copilot-instructions.md`);
 	}
 
-	const claudeSkillsLink = path.join(claudeDir, 'skills');
-	const claudeSkillsLinkType = ensureAgentHarnessLink(path.join('..', '.agents', 'skills'), claudeSkillsLink);
-	if (claudeSkillsLinkType !== 'existing') {
-		log('.', `Created ${claudeSkillsLinkType} .claude/skills -> .agents/skills`);
+	// Thrice does not ship .agents/skills, so only link it when a checkout has one.
+	if (fs.existsSync(path.join(root, '.agents', 'skills'))) {
+		const claudeSkillsLink = path.join(claudeDir, 'skills');
+		const claudeSkillsLinkType = ensureAgentHarnessLink(path.join('..', '.agents', 'skills'), claudeSkillsLink);
+		if (claudeSkillsLinkType !== 'existing') {
+			log('.', `Created ${claudeSkillsLinkType} .claude/skills -> .agents/skills`);
+		}
 	}
 }
 

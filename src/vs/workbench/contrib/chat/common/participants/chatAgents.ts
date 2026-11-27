@@ -95,10 +95,18 @@ export interface IChatWelcomeMessageContent {
 	message: IMarkdownString;
 }
 
+/** A message the user sent to steer a running request. */
+export interface IChatSteeringMessage {
+	readonly id: string;
+	readonly prompt: string;
+}
+
 export interface IChatAgentImplementation {
 	invoke(request: IChatAgentRequest, progress: (parts: IChatProgress[]) => void, history: IChatAgentHistoryEntry[], token: CancellationToken): Promise<IChatAgentResult>;
 	setRequestTools?(requestId: string, tools: UserSelectedTools): void;
 	setYieldRequested?(requestId: string, value: boolean): void;
+	/** Delivers a steering message into the running request; resolves `true` when it was taken. */
+	steer?(requestId: string, message: IChatSteeringMessage): Promise<boolean>;
 	provideFollowups?(request: IChatAgentRequest, result: IChatAgentResult, history: IChatAgentHistoryEntry[], token: CancellationToken): Promise<IChatFollowup[]>;
 	provideChatTitle?: (history: IChatAgentHistoryEntry[], token: CancellationToken) => Promise<string | undefined>;
 	provideChatSummary?: (history: IChatAgentHistoryEntry[], token: CancellationToken) => Promise<string | undefined>;
@@ -271,6 +279,11 @@ export interface IChatAgentService {
 	invokeAgent(agent: string, request: IChatAgentRequest, progress: (parts: IChatProgress[]) => void, history: IChatAgentHistoryEntry[], token: CancellationToken): Promise<IChatAgentResult>;
 	setRequestTools(agent: string, requestId: string, tools: UserSelectedTools): void;
 	setYieldRequested(agent: string, requestId: string, value: boolean): void;
+	/** Offers a steering message to a running request. Resolves `false` when it cannot take one. */
+	steer(agent: string, requestId: string, message: IChatSteeringMessage): Promise<boolean>;
+	/** Records whether a running request accepts steering messages (see {@link steer}). */
+	setSteerable(requestId: string, steerable: boolean): void;
+	isSteerable(requestId: string): boolean;
 	getFollowups(id: string, request: IChatAgentRequest, result: IChatAgentResult, history: IChatAgentHistoryEntry[], token: CancellationToken): Promise<IChatFollowup[]>;
 	getChatTitle(id: string, history: IChatAgentHistoryEntry[], token: CancellationToken): Promise<string | undefined>;
 	getChatSummary(id: string, history: IChatAgentHistoryEntry[], token: CancellationToken): Promise<string | undefined>;
@@ -575,6 +588,32 @@ export class ChatAgentService extends Disposable implements IChatAgentService {
 		data.impl.setYieldRequested?.(requestId, value);
 	}
 
+	private readonly _steerableRequests = new Set<string>();
+
+	async steer(id: string, requestId: string, message: IChatSteeringMessage): Promise<boolean> {
+		const data = this._agents.get(id);
+		if (!data?.impl?.steer || !this._steerableRequests.has(requestId)) {
+			return false;
+		}
+		try {
+			return await data.impl.steer(requestId, message);
+		} catch {
+			return false;
+		}
+	}
+
+	setSteerable(requestId: string, steerable: boolean): void {
+		if (steerable) {
+			this._steerableRequests.add(requestId);
+		} else {
+			this._steerableRequests.delete(requestId);
+		}
+	}
+
+	isSteerable(requestId: string): boolean {
+		return this._steerableRequests.has(requestId);
+	}
+
 	async getFollowups(id: string, request: IChatAgentRequest, result: IChatAgentResult, history: IChatAgentHistoryEntry[], token: CancellationToken): Promise<IChatFollowup[]> {
 		const data = this._agents.get(id);
 		if (!data?.impl?.provideFollowups) {
@@ -691,6 +730,10 @@ export class MergedChatAgent implements IChatAgent {
 
 	setYieldRequested(requestId: string, value: boolean): void {
 		this.impl.setYieldRequested?.(requestId, value);
+	}
+
+	steer(requestId: string, message: IChatSteeringMessage): Promise<boolean> {
+		return this.impl.steer?.(requestId, message) ?? Promise.resolve(false);
 	}
 
 	async provideFollowups(request: IChatAgentRequest, result: IChatAgentResult, history: IChatAgentHistoryEntry[], token: CancellationToken): Promise<IChatFollowup[]> {

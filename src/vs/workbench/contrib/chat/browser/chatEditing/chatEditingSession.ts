@@ -91,6 +91,16 @@ export interface IChatExternalTurnEdit {
 	readonly after: string | undefined;
 }
 
+/** Options of {@link ChatEditingSession.recordExternalTurnEdits}. */
+export interface IChatExternalTurnEditsOptions {
+	/**
+	 * The turn is still running: record the edits but keep its external edit mode
+	 * (see {@link ChatEditingSession.beginExternalTurn}) active, so that the agent's
+	 * later writes keep counting as agent edits.
+	 */
+	readonly partial?: boolean;
+}
+
 class ThrottledSequencer extends Sequencer {
 
 	private _size = 0;
@@ -186,9 +196,13 @@ export class ChatEditingSession extends Disposable implements IChatEditingSessio
 	}>();
 
 	/** Set between {@link beginExternalTurn} and {@link endExternalTurn}. */
-	private _activeExternalTurn: { requestId: string; entries: readonly AbstractChatEditingModifiedFileEntry[] } | undefined;
+	private _activeExternalTurn: { requestId: string; entries: AbstractChatEditingModifiedFileEntry[] } | undefined;
 
-	/** Edits recorded by {@link recordExternalTurnEdits}, by request id, in recording order. In memory only. */
+	/**
+	 * Edits recorded by {@link recordExternalTurnEdits}, by request id, in recording order. In memory only.
+	 * `before` is the content when the turn started (from the file's first recording in the turn),
+	 * `after` the content of its latest recording.
+	 */
 	private readonly _externalTurnEdits = new Map<string, ResourceMap<{ before: string | undefined; after: string | undefined }>>();
 
 	private readonly _entriesObs = observableValue<readonly AbstractChatEditingModifiedFileEntry[]>(this, []);
@@ -893,9 +907,26 @@ export class ChatEditingSession extends Disposable implements IChatEditingSessio
 		this.endExternalTurn(undefined);
 		const entries = this._entriesObs.get().slice();
 		for (const entry of entries) {
-			entry.startExternalEdit();
+			// The agent writes to disk: typing in these files meanwhile is still the user's.
+			entry.startExternalEdit(true);
 		}
 		this._activeExternalTurn = { requestId, entries };
+	}
+
+	/**
+	 * Keeps `entry` in external edit mode until the active turn of `requestId` ends.
+	 * @returns `false` when no turn of `requestId` is active.
+	 */
+	private _keepInExternalTurn(entry: AbstractChatEditingModifiedFileEntry, requestId: string): boolean {
+		const turn = this._activeExternalTurn;
+		if (!turn || turn.requestId !== requestId) {
+			return false;
+		}
+		if (!turn.entries.includes(entry)) {
+			turn.entries.push(entry);
+		}
+		entry.startExternalEdit(true);
+		return true;
 	}
 
 	/**
@@ -923,19 +954,45 @@ export class ChatEditingSession extends Disposable implements IChatEditingSessio
 	 * `before === undefined` means the agent created the file, `after === undefined`
 	 * that it deleted it.
 	 *
-	 * @returns the files that were recorded.
+	 * May be called several times per request: with {@link IChatExternalTurnEditsOptions.partial}
+	 * while the agent runs (e.g. after each file write), then once without it when the
+	 * turn ends, which also ends the external turn. A file's first recording in the
+	 * request sets its baseline (later `before` values are ignored); later recordings
+	 * only add the change from the previously recorded `after`, so recording the same
+	 * content again is a no-op. A final call also reconciles files recorded earlier in
+	 * the request that it does not list, using their current content on disk.
+	 *
+	 * @returns the files of `edits` that were recorded.
 	 */
-	async recordExternalTurnEdits(responseModel: IChatResponseModel, edits: readonly IChatExternalTurnEdit[]): Promise<URI[]> {
+	async recordExternalTurnEdits(responseModel: IChatResponseModel, edits: readonly IChatExternalTurnEdit[], options?: IChatExternalTurnEditsOptions): Promise<URI[]> {
 		this._assertNotDisposed();
 		await chatEditingSessionIsReady(this);
 
 		const requestId = responseModel.requestId;
+		const partial = !!options?.partial;
 		const recorded: URI[] = [];
-		try {
-			if (this.isDisposed) {
-				return recorded;
-			}
+		if (this.isDisposed) {
+			return recorded;
+		}
 
+		if (partial && this._activeExternalTurn?.requestId !== requestId && !responseModel.isComplete) {
+			// No turn was begun for this request (e.g. the session was created after the
+			// request was added): begin one so that the agent's later writes count as agent edits.
+			this.beginExternalTurn(requestId);
+		}
+
+		const recordedForRequest = this._externalTurnEdits.get(requestId);
+		const reconcile = partial || !recordedForRequest
+			? []
+			: Array.from(recordedForRequest.keys()).filter(uri => !edits.some(edit => isEqual(edit.uri, uri)));
+		if (edits.length === 0 && reconcile.length === 0) {
+			if (!partial) {
+				this.endExternalTurn(requestId);
+			}
+			return recorded;
+		}
+
+		try {
 			// The auto-apply observer creates the request checkpoint when the request is
 			// added. Create it here when the session was started after the request.
 			if (!this._timeline.getCheckpointIdForRequest(requestId, undefined)) {
@@ -947,40 +1004,23 @@ export class ChatEditingSession extends Disposable implements IChatEditingSessio
 				if (edit.before === undefined && edit.after === undefined) {
 					continue;
 				}
-				const resource = edit.uri;
-				if (this._notebookService.hasSupportedNotebooks(resource)) {
-					// Notebook entries track serialized notebook snapshots, not raw file text.
-					this._logService.warn(`recordExternalTurnEdits: skipping notebook ${resource.toString()}`);
-					continue;
-				}
-
-				const ok = await this._streamingEditLocks.queue(resource.toString(), async () => {
-					if (this.isDisposed) {
-						return false;
-					}
-					try {
-						if (edit.after === undefined) {
-							return this._recordExternalDeletion(resource, edit.before!, responseModel, telemetryInfo);
-						}
-						return await this._recordExternalWrite(resource, edit.before, edit.after, responseModel, telemetryInfo);
-					} catch (err) {
-						this._logService.error(`recordExternalTurnEdits: failed to record ${resource.toString()}`, err);
-						return false;
-					}
-				});
-
-				if (ok) {
-					recorded.push(resource);
-					let forRequest = this._externalTurnEdits.get(requestId);
-					if (!forRequest) {
-						forRequest = new ResourceMap();
-						this._externalTurnEdits.set(requestId, forRequest);
-					}
-					forRequest.set(resource, { before: edit.before, after: edit.after });
+				if (await this._recordExternalTurnEdit(edit.uri, edit.before, async () => edit.after, responseModel, telemetryInfo)) {
+					recorded.push(edit.uri);
 				}
 			}
+			for (const uri of reconcile) {
+				await this._recordExternalTurnEdit(uri, undefined, async () => {
+					try {
+						return (await this._fileService.readFile(uri)).value.toString();
+					} catch {
+						return undefined;
+					}
+				}, responseModel, telemetryInfo);
+			}
 		} finally {
-			this.endExternalTurn(requestId);
+			if (!partial) {
+				this.endExternalTurn(requestId);
+			}
 			const hasOtherTasks = Iterable.some(this._streamingEditLocks.keys(), () => true);
 			if (!hasOtherTasks && !this.isDisposed) {
 				this._state.set(ChatEditingSessionState.Idle, undefined);
@@ -990,7 +1030,56 @@ export class ChatEditingSession extends Disposable implements IChatEditingSessio
 		return recorded;
 	}
 
-	private _recordExternalDeletion(resource: URI, before: string, responseModel: IChatResponseModel, telemetryInfo: IModifiedEntryTelemetryInfo): boolean {
+	/**
+	 * Records one file of {@link recordExternalTurnEdits} under the file's streaming
+	 * edit lock. `before` only counts for the file's first recording in the request.
+	 */
+	private _recordExternalTurnEdit(resource: URI, before: string | undefined, readAfter: () => Promise<string | undefined>, responseModel: IChatResponseModel, telemetryInfo: IModifiedEntryTelemetryInfo): Promise<boolean> {
+		const requestId = responseModel.requestId;
+		if (this._notebookService.hasSupportedNotebooks(resource)) {
+			// Notebook entries track serialized notebook snapshots, not raw file text.
+			this._logService.warn(`recordExternalTurnEdits: skipping notebook ${resource.toString()}`);
+			return Promise.resolve(false);
+		}
+
+		return this._streamingEditLocks.queue(resource.toString(), async () => {
+			if (this.isDisposed) {
+				return false;
+			}
+			try {
+				let forRequest = this._externalTurnEdits.get(requestId);
+				const prior = forRequest?.get(resource);
+				const after = await readAfter();
+				// The content when the turn started, and the content the timeline last recorded.
+				const baseline = prior ? prior.before : before;
+				const previous = prior ? prior.after : before;
+				if (previous === after) {
+					return true; // already recorded, or unchanged
+				}
+
+				const ok = after === undefined
+					? this._recordExternalDeletion(resource, baseline, previous!, responseModel, telemetryInfo)
+					: await this._recordExternalWrite(resource, baseline, previous, after, !!prior, responseModel, telemetryInfo);
+				if (ok) {
+					if (!forRequest) {
+						forRequest = new ResourceMap();
+						this._externalTurnEdits.set(requestId, forRequest);
+					}
+					forRequest.set(resource, { before: baseline, after });
+				}
+				return ok;
+			} catch (err) {
+				this._logService.error(`recordExternalTurnEdits: failed to record ${resource.toString()}`, err);
+				return false;
+			}
+		});
+	}
+
+	/**
+	 * @param baseline the content when the turn started, `undefined` if the file was created during the turn.
+	 * @param previous the content right before the deletion.
+	 */
+	private _recordExternalDeletion(resource: URI, baseline: string | undefined, previous: string, responseModel: IChatResponseModel, telemetryInfo: IModifiedEntryTelemetryInfo): boolean {
 		const requestId = responseModel.requestId;
 		const existingEntry = this._getEntry(resource);
 		if (existingEntry) {
@@ -998,18 +1087,19 @@ export class ChatEditingSession extends Disposable implements IChatEditingSessio
 			this._entriesObs.set(this._entriesObs.get().filter(e => e !== existingEntry), undefined);
 		}
 
-		if (!this._initialFileContents.has(resource)) {
-			this._initialFileContents.set(resource, before);
-		}
-
-		if (!this._timeline.hasFileBaseline(resource, requestId)) {
-			this._timeline.recordFileBaseline({
-				uri: resource,
-				requestId,
-				content: before,
-				epoch: this._timeline.incrementEpoch(),
-				telemetryInfo,
-			});
+		if (baseline !== undefined) {
+			if (!this._initialFileContents.has(resource)) {
+				this._initialFileContents.set(resource, baseline);
+			}
+			if (!this._timeline.hasFileBaseline(resource, requestId)) {
+				this._timeline.recordFileBaseline({
+					uri: resource,
+					requestId,
+					content: baseline,
+					epoch: this._timeline.incrementEpoch(),
+					telemetryInfo,
+				});
+			}
 		}
 
 		this._timeline.recordFileOperation({
@@ -1017,14 +1107,18 @@ export class ChatEditingSession extends Disposable implements IChatEditingSessio
 			uri: resource,
 			requestId,
 			epoch: this._timeline.incrementEpoch(),
-			finalContent: before,
+			finalContent: previous,
 		});
+
+		if (baseline === undefined) {
+			return true; // created and deleted during the turn: nothing to review
+		}
 
 		const languageSelection = this._languageService.createByFilepathOrFirstLine(resource);
 		const entry = this._instantiationService.createInstance(
 			ChatEditingDeletedFileEntry,
 			resource,
-			before,
+			baseline,
 			{ collapse: (tx: ITransaction | undefined) => this._collapse(resource, tx) },
 			telemetryInfo,
 			languageSelection.languageId
@@ -1033,12 +1127,17 @@ export class ChatEditingSession extends Disposable implements IChatEditingSessio
 		return true;
 	}
 
-	private async _recordExternalWrite(resource: URI, before: string | undefined, after: string, responseModel: IChatResponseModel, telemetryInfo: IModifiedEntryTelemetryInfo): Promise<boolean> {
+	/**
+	 * @param baseline the content when the turn started, `undefined` if the file was created during the turn.
+	 * @param previous the content the timeline last recorded for the file in this turn
+	 * (`baseline` on its first recording), `undefined` if the file did not exist.
+	 * @param repeated whether the file was already recorded in this turn.
+	 */
+	private async _recordExternalWrite(resource: URI, baseline: string | undefined, previous: string | undefined, after: string, repeated: boolean, responseModel: IChatResponseModel, telemetryInfo: IModifiedEntryTelemetryInfo): Promise<boolean> {
 		const requestId = responseModel.requestId;
-		const isCreation = before === undefined;
 
 		let existing = this._getEntry(resource);
-		if (existing && isCreation && !(existing instanceof ChatEditingDeletedFileEntry)) {
+		if (existing && !repeated && baseline === undefined && !(existing instanceof ChatEditingDeletedFileEntry)) {
 			// The file did not exist when the turn started, so a stale entry for it is meaningless.
 			const stale = existing;
 			stale.dispose();
@@ -1051,8 +1150,8 @@ export class ChatEditingSession extends Disposable implements IChatEditingSessio
 			resource,
 			NotExistBehavior.Abort,
 			telemetryInfo,
-			reuse ? undefined : (before ?? ''),
-			isCreation ? ChatEditKind.Created : ChatEditKind.Modified,
+			reuse ? undefined : (baseline ?? ''),
+			baseline === undefined ? ChatEditKind.Created : ChatEditKind.Modified,
 		);
 		if (!entry || !(entry instanceof ChatEditingModifiedDocumentEntry)) {
 			return false;
@@ -1074,13 +1173,13 @@ export class ChatEditingSession extends Disposable implements IChatEditingSessio
 			// Sets the entry back to modified (e.g. when its previous edits were kept).
 			await entry.acceptAgentEdits(resource, [], true, responseModel, {});
 
-			if (reuse && !wasModified && before !== undefined) {
-				// Earlier edits were kept or undone: review only this turn's changes.
-				(entry as AbstractChatEditingModifiedFileEntry).initialContent = before;
+			if (reuse && !wasModified && previous !== undefined) {
+				// Earlier edits were kept or undone: review only the changes since.
+				(entry as AbstractChatEditingModifiedFileEntry).initialContent = previous;
 				await entry.resetEditTrackerToInitialContent();
 			}
 
-			if (isCreation) {
+			if (previous === undefined) {
 				this._timeline.recordFileOperation({
 					type: FileOperationType.Create,
 					uri: resource,
@@ -1090,16 +1189,16 @@ export class ChatEditingSession extends Disposable implements IChatEditingSessio
 					telemetryInfo,
 				});
 			} else {
-				if (!this._timeline.hasFileBaseline(resource, requestId)) {
+				if (baseline !== undefined && !this._timeline.hasFileBaseline(resource, requestId)) {
 					this._timeline.recordFileBaseline({
 						uri: resource,
 						requestId,
-						content: before,
+						content: baseline,
 						epoch: this._timeline.incrementEpoch(),
 						telemetryInfo,
 					});
 				}
-				const edits = await entry.computeEditsFromSnapshots(before, after);
+				const edits = await entry.computeEditsFromSnapshots(previous, after);
 				if (edits.length > 0) {
 					this._recordEditOperations(entry, resource, edits, responseModel);
 				}
@@ -1107,7 +1206,10 @@ export class ChatEditingSession extends Disposable implements IChatEditingSessio
 
 			await entry.acceptStreamingEditsEnd();
 		} finally {
-			entry.stopExternalEdit();
+			// While the turn runs, the agent keeps writing to disk: keep counting those writes as agent edits.
+			if (!this._keepInExternalTurn(entry, requestId)) {
+				entry.stopExternalEdit();
+			}
 		}
 		return true;
 	}

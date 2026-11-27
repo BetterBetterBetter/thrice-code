@@ -24,7 +24,77 @@ export function getToolInvocationSummary(invocation: IChatToolInvocation | IChat
 	if (!IChatToolInvocation.isComplete(invocation) || invocation.kind === 'toolInvocationSerialized' && invocation.isComplete === false) {
 		return { kind: 'incomplete' };
 	}
-	return invocation.summary;
+	return invocation.summary ?? thriceExternalSummary(invocation);
+}
+
+/**
+ * Tool names the Thrice providers extension reports for its external tool calls (Claude-style,
+ * already mapped from Codex and OpenCode names). They carry no structured summary, so the facts
+ * come from the row itself: the file link in its message, or the message text for a search.
+ */
+const THRICE_EXTERNAL_TOOLS: Readonly<Record<string, ChatToolInvocationSummary['kind']>> = {
+	Read: 'read',
+	LS: 'list',
+	Grep: 'search',
+	Glob: 'search',
+	Bash: 'command',
+	Edit: 'edit',
+	MultiEdit: 'edit',
+	Write: 'edit',
+	Delete: 'edit',
+	NotebookEdit: 'edit',
+};
+
+/** Whether a tool call comes from the Thrice providers extension with one of its named tools. */
+export function isThriceExternalTool(invocation: Pick<IChatToolInvocation | IChatToolInvocationSerialized, 'toolId' | 'summary'>): boolean {
+	// The name first: a summary can be a getter that does work.
+	return Object.prototype.hasOwnProperty.call(THRICE_EXTERNAL_TOOLS, invocation.toolId) && !invocation.summary;
+}
+
+function thriceExternalSummary(invocation: IChatToolInvocation | IChatToolInvocationSerialized): ChatToolInvocationSummary | undefined {
+	const kind = THRICE_EXTERNAL_TOOLS[invocation.toolId];
+	if (!kind) {
+		return undefined;
+	}
+	const message = messageText(invocation.pastTenseMessage) || messageText(invocation.invocationMessage);
+	const data = invocation.toolSpecificData;
+	const linked = (): IChatToolSummaryResource[] => {
+		if (data?.kind === 'thriceFileEdit') {
+			try {
+				return [{ uri: URI.parse(data.uri) }];
+			} catch {
+				return [];
+			}
+		}
+		const match = /\]\(((?:file|vscode-remote):[^)\s]+)\)/.exec(message);
+		if (!match) {
+			return [];
+		}
+		try {
+			return [{ uri: URI.parse(match[1]).with({ fragment: '' }) }];
+		} catch {
+			return [];
+		}
+	};
+	switch (kind) {
+		case 'read':
+		case 'list':
+		case 'edit':
+			return { kind, resources: linked() };
+		case 'search': {
+			// The message names the pattern, so equal searches count once.
+			const query = message.replace(/^\S+\s*/, '').trim();
+			return query ? { kind: 'search', queries: [query], searchKind: invocation.toolId === 'Glob' ? 'files' : 'text' } : undefined;
+		}
+		case 'command':
+			return { kind: 'command' };
+		default:
+			return undefined;
+	}
+}
+
+function messageText(message: string | { readonly value: string } | undefined): string {
+	return typeof message === 'string' ? message : message?.value ?? '';
 }
 
 /**

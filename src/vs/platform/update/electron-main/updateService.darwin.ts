@@ -25,7 +25,7 @@ import { IApplicationStorageMainService } from '../../storage/electron-main/stor
 import { ITelemetryService } from '../../telemetry/common/telemetry.js';
 import { AvailableForDownload, ENABLE_EARLY_STAGING_SETTING, IQuitAndInstallOptions, IUpdate, State, StateType, UpdateType } from '../common/update.js';
 import { IMeteredConnectionService } from '../../meteredConnection/common/meteredConnection.js';
-import { AbstractUpdateService, createUpdateURL, getUpdateRequestHeaders, IUpdateURLOptions, UpdateErrorClassification, UpdateErrorEvent } from './abstractUpdateService.js';
+import { AbstractUpdateService, createUpdateURL, getUpdateRequestHeaders, isGitHubReleasesUpdateUrl, IUpdateURLOptions, UpdateErrorClassification, UpdateErrorEvent } from './abstractUpdateService.js';
 
 type DarwinRestartOutcome = 'updated' | 'unexpectedCommit' | 'sameCommit' | 'unknownCommit' | 'vetoed' | 'hostError';
 
@@ -146,6 +146,7 @@ function createElectronHost(): IDarwinUpdateHost {
 
 export class DarwinUpdateService extends AbstractUpdateService implements IRelaunchHandler {
 
+	private autoUpdaterReady = false;
 	private earlyStagingDefault: boolean | undefined;
 	private pendingCheckEarlyStaging: boolean | undefined;
 	private activeDownloadEarlyStaging: boolean | undefined;
@@ -461,10 +462,16 @@ export class DarwinUpdateService extends AbstractUpdateService implements IRelau
 		try {
 			this.logService.trace('update#buildUpdateFeedUrl - setting feed URL for Electron autoUpdater', { url, quality, commit, headers, earlyStaging });
 			this.host.setFeedURL(url, headers);
+			this.autoUpdaterReady = true;
 		} catch (e) {
 			// application is very likely not signed
+			this.autoUpdaterReady = false;
 			this.logService.error('Failed to set update feed URL', e);
-			return undefined;
+			// A GitHub release feed can still be checked over HTTP. The download
+			// opens the release asset when Squirrel cannot install it.
+			if (!isGitHubReleasesUpdateUrl(this.productService.updateUrl)) {
+				return undefined;
+			}
 		}
 		this.pendingCheckEarlyStaging = earlyStaging && registered;
 		return url;
@@ -479,22 +486,30 @@ export class DarwinUpdateService extends AbstractUpdateService implements IRelau
 
 		const internalOrg = this.getInternalOrg();
 		const background = !explicit && !internalOrg;
+		const commit = pendingCommit ?? this.productService.commit!;
+		const url = this.getUpdateFeedUrl(this.quality, commit, { background, internalOrg });
+		if (!url) {
+			this.setState(State.Idle(UpdateType.Archive));
+			return;
+		}
 
-		// When connection is metered and this is not an explicit check, avoid electron call as to not to trigger auto-download.
-		if (!explicit && this.meteredConnectionService.isConnectionMetered) {
-			const url = this.getUpdateFeedUrl(this.quality, pendingCommit ?? this.productService.commit!, { background, internalOrg });
-			if (!url) {
-				this.setState(State.Idle(UpdateType.Archive));
-				return;
+		// GitHub publishes one latest feed per platform, so the commit comparison
+		// happens here. Squirrel still installs a newer release when the app is signed.
+		const githubFeed = isGitHubReleasesUpdateUrl(this.productService.updateUrl);
+		if ((!explicit && this.meteredConnectionService.isConnectionMetered) || !this.autoUpdaterReady) {
+			if (!explicit && this.meteredConnectionService.isConnectionMetered) {
+				this.logService.info('update#doCheckForUpdates - checking for update without auto-download because connection is metered');
 			}
-			this.logService.info('update#doCheckForUpdates - checking for update without auto-download because connection is metered');
 			this.checkForUpdateNoDownload(url);
 			return;
 		}
 
-		const url = this.buildUpdateFeedUrl(this.quality, pendingCommit ?? this.productService.commit!, { background, internalOrg });
+		if (githubFeed) {
+			this.checkForUpdateNoDownload(url, undefined, true);
+			return;
+		}
 
-		if (!url) {
+		if (!this.buildUpdateFeedUrl(this.quality, commit, { background, internalOrg })) {
 			this.setState(State.Idle(UpdateType.Archive));
 			return;
 		}
@@ -508,20 +523,23 @@ export class DarwinUpdateService extends AbstractUpdateService implements IRelau
 	 * Used when connection is metered or in the embedded app.
 	 * @param canInstall When false, signals that the update cannot be installed from this app.
 	 */
-	private async checkForUpdateNoDownload(url: string, canInstall?: boolean): Promise<void> {
+	private async checkForUpdateNoDownload(url: string, canInstall?: boolean, installWithAutoUpdater = false): Promise<void> {
 		const headers = getUpdateRequestHeaders(this.productService.version);
 		this.logService.trace('update#checkForUpdateNoDownload - checking update server', { url, headers });
 
 		try {
-			const context = await this.requestService.request({ url, headers, callSite: 'updateService.darwin.checkForUpdates' }, CancellationToken.None);
+			const context = await this.requestService.request({ url, headers, followRedirects: 10, callSite: 'updateService.darwin.checkForUpdates' }, CancellationToken.None);
 			const statusCode = context.res.statusCode;
 			this.logService.trace('update#checkForUpdateNoDownload - response', { statusCode });
 
 			const update = await asJson<IUpdate>(context);
-			if (!update || !update.url || !update.version || !update.productVersion) {
+			if (!update || !update.url || !update.version || !update.productVersion || update.version === this.productService.commit) {
 				this.logService.trace('update#checkForUpdateNoDownload - no update available');
 				const notAvailable = this.state.type === StateType.CheckingForUpdates && this.state.explicit;
 				this.setState(State.Idle(UpdateType.Archive, undefined, notAvailable || undefined));
+			} else if (installWithAutoUpdater) {
+				this.logService.trace('update#checkForUpdateNoDownload - update available, handing off to Electron autoUpdater', { version: update.version, productVersion: update.productVersion });
+				this.host.checkForUpdates();
 			} else {
 				this.logService.trace('update#checkForUpdateNoDownload - update available', { version: update.version, productVersion: update.productVersion });
 				this.setState(State.AvailableForDownload(update, canInstall));
@@ -569,6 +587,14 @@ export class DarwinUpdateService extends AbstractUpdateService implements IRelau
 	}
 
 	protected override async doDownloadUpdate(state: AvailableForDownload): Promise<void> {
+		// Unsigned builds cannot register a Squirrel feed. The release asset is
+		// the update, so open that download instead of failing the check.
+		if (!this.autoUpdaterReady && state.update.url) {
+			await electron.shell.openExternal(state.update.url);
+			this.setState(State.Idle(UpdateType.Archive));
+			return;
+		}
+
 		// Rebuild feed URL and trigger download via Electron's auto-updater
 		const url = this.buildUpdateFeedUrl(this.quality!, state.update.version, { internalOrg: this.getInternalOrg() });
 		if (!url) {

@@ -28,7 +28,7 @@ import { LocalChatSessionUri } from '../../contrib/chat/common/model/chatUri.js'
 import { ChatAgentLocation } from '../../contrib/chat/common/constants.js';
 import { checkProposedApiEnabled, isProposedApiEnabled } from '../../services/extensions/common/extensions.js';
 import { Dto } from '../../services/extensions/common/proxyIdentifier.js';
-import { ExtHostChatAgentsShape2, IChatAgentCompletionItem, IChatAgentHistoryEntryDto, IChatAgentInvokeResult, IChatAgentProgressShape, IChatSessionCustomizationItemDto, IChatSessionCustomizationProviderMetadataDto, IChatSessionCustomizationSourceFolderDto, IChatProgressDto, IChatSessionContextDto, ICustomAgentDto, IExtensionChatAgentMetadata, IHookDto, IInstructionDto, IMainContext, IPluginDto, ISkillDto, ISlashCommandDto, MainContext, MainThreadChatAgentsShape2 } from './extHost.protocol.js';
+import { ExtHostChatAgentsShape2, IChatAgentCompletionItem, IChatAgentHistoryEntryDto, IChatAgentInvokeResult, IChatAgentProgressShape, IChatSteeringMessageDto, IChatSessionCustomizationItemDto, IChatSessionCustomizationProviderMetadataDto, IChatSessionCustomizationSourceFolderDto, IChatProgressDto, IChatSessionContextDto, ICustomAgentDto, IExtensionChatAgentMetadata, IHookDto, IInstructionDto, IMainContext, IPluginDto, ISkillDto, ISlashCommandDto, MainContext, MainThreadChatAgentsShape2 } from './extHost.protocol.js';
 import { CommandsConverter, ExtHostCommands } from './extHostCommands.js';
 import { ExtHostDiagnostics } from './extHostDiagnostics.js';
 import { ExtHostDocuments } from './extHostDocuments.js';
@@ -47,6 +47,8 @@ export class ChatAgentResponseStream {
 	private _isClosed: boolean = false;
 	private _firstProgress: number | undefined;
 	private _apiObject: vscode.ChatResponseStream | undefined;
+	/** Ends the open thinking run, if any, so its duration reaches the chat. */
+	private _endThinking: (() => void) | undefined;
 
 	constructor(
 		private readonly _extension: IExtensionDescription,
@@ -59,6 +61,7 @@ export class ChatAgentResponseStream {
 	) { }
 
 	close() {
+		this._endThinking?.();
 		this._isClosed = true;
 	}
 
@@ -92,9 +95,42 @@ export class ChatAgentResponseStream {
 			const sendQueue: (IChatProgressDto | [IChatProgressDto, number])[] = [];
 			let notify: Function[] = [];
 
+			/**
+			 * A thinking run the extension did not time. It ends at the next part that is not
+			 * thinking (or a thinking part with another id, or the end of the response), and its
+			 * measured duration is sent then, so the section reads "Thought for Ns".
+			 */
+			let openThinking: { readonly id: string; readonly startedAt: number } | undefined;
+			const endThinking = () => {
+				const run = openThinking;
+				openThinking = undefined;
+				if (run) {
+					send({ kind: 'thinking', value: '', id: run.id, reasoningDurationMs: Math.max(0, Date.now() - run.startedAt) });
+				}
+			};
+			const trackThinking = (chunk: IChatProgressDto) => {
+				if (chunk.kind !== 'thinking') {
+					endThinking();
+					return;
+				}
+				if (chunk.reasoningStartedAt !== undefined || chunk.reasoningDurationMs !== undefined || chunk.reasoningTimingSource !== undefined) {
+					return;
+				}
+				const text = Array.isArray(chunk.value) ? chunk.value.join('') : chunk.value ?? '';
+				if (!chunk.id || !text) {
+					return;
+				}
+				if (openThinking?.id !== chunk.id) {
+					endThinking();
+					openThinking = { id: chunk.id, startedAt: Date.now() };
+				}
+			};
+			this._endThinking = endThinking;
+
 			function send(chunk: IChatProgressDto): void;
 			function send(chunk: IChatProgressDto, handle: number): Promise<void>;
 			function send(chunk: IChatProgressDto, handle?: number) {
+				trackThinking(chunk);
 				// push data into send queue. the first entry schedules the micro task which
 				// does the actual send to the main thread
 				const newLen = sendQueue.push(handle !== undefined ? [chunk, handle] : chunk);
@@ -483,6 +519,7 @@ interface InFlightChatRequest {
 	extension: IRelaxedExtensionDescription;
 	hooks?: ChatRequestHooks;
 	yieldRequested: boolean;
+	steeringHandler?: (message: vscode.ChatSteeringMessage) => Thenable<boolean> | boolean;
 }
 
 export class ExtHostChatAgents2 extends Disposable implements ExtHostChatAgentsShape2 {
@@ -971,6 +1008,19 @@ export class ExtHostChatAgents2 extends Disposable implements ExtHostChatAgentsS
 		this._onDidChangeChatRequestTools.fire(request.extRequest);
 	}
 
+	async $steer(requestId: string, message: IChatSteeringMessageDto): Promise<boolean> {
+		const handler = [...this._inFlightRequests].find(r => r.requestId === requestId)?.steeringHandler;
+		if (!handler) {
+			return false;
+		}
+		try {
+			return (await handler({ id: message.id, prompt: message.prompt })) === true;
+		} catch (err) {
+			this._logService.error(err);
+			return false;
+		}
+	}
+
 	$setYieldRequested(requestId: string, value: boolean): void {
 		const request = [...this._inFlightRequests].find(r => r.requestId === requestId);
 		if (request) {
@@ -1042,7 +1092,21 @@ export class ExtHostChatAgents2 extends Disposable implements ExtHostChatAgentsS
 			const chatContext: vscode.ChatContext = {
 				history,
 				chatSessionContext,
-				get yieldRequested() { return inFlightRequest?.yieldRequested ?? false; }
+				get yieldRequested() { return inFlightRequest?.yieldRequested ?? false; },
+				registerSteeringHandler: handler => {
+					const current = inFlightRequest;
+					if (!current || !this._inFlightRequests.has(current)) {
+						return new extHostTypes.Disposable(() => { });
+					}
+					current.steeringHandler = handler;
+					this._proxy.$setSteerable(current.requestId, true);
+					return new extHostTypes.Disposable(() => {
+						if (current.steeringHandler === handler) {
+							current.steeringHandler = undefined;
+							this._proxy.$setSteerable(current.requestId, false);
+						}
+					});
+				},
 			};
 			const task = agent.invoke(
 				extRequest,
@@ -1093,6 +1157,10 @@ export class ExtHostChatAgents2 extends Disposable implements ExtHostChatAgentsS
 			this._yieldRequestedBeforeInvoke.delete(requestDto.requestId);
 			if (inFlightRequest) {
 				this._inFlightRequests.delete(inFlightRequest);
+				if (inFlightRequest.steeringHandler) {
+					inFlightRequest.steeringHandler = undefined;
+					this._proxy.$setSteerable(inFlightRequest.requestId, false);
+				}
 			}
 			// Clean up any pending carousel resolvers for this request
 			const pendingResolvers = this._pendingCarouselResolvers.get(requestDto.requestId);

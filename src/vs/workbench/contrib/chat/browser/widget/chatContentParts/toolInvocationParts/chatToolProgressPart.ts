@@ -8,6 +8,7 @@ import { renderAsPlaintext } from '../../../../../../../base/browser/markdownRen
 import { status } from '../../../../../../../base/browser/ui/aria/aria.js';
 import { IMarkdownString, MarkdownString } from '../../../../../../../base/common/htmlContent.js';
 import { stripIcons } from '../../../../../../../base/common/iconLabels.js';
+import { MutableDisposable } from '../../../../../../../base/common/lifecycle.js';
 import { autorun, observableValue } from '../../../../../../../base/common/observable.js';
 import { localize } from '../../../../../../../nls.js';
 import { IMarkdownRenderer } from '../../../../../../../platform/markdown/browser/markdownRenderer.js';
@@ -63,12 +64,15 @@ export class ChatToolProgressSubPart extends BaseChatToolInvocationSubPart {
 			return part.domNode;
 		} else {
 			const container = document.createElement('div');
+			const rendered = this._register(new MutableDisposable<{ part: ChatProgressContentPart; content: IMarkdownString; stateType: IChatToolInvocation.StateKind | undefined; shimmer: boolean; dispose(): void }>());
 			this._register(autorun(reader => {
 				let progressContent: IMarkdownString | string | undefined;
+				let stateType: IChatToolInvocation.StateKind | undefined;
 				const key = this.getAnnouncementKey('progress');
 
 				if (this.toolInvocation.kind === 'toolInvocation') {
 					const state = this.toolInvocation.state.read(reader);
+					stateType = state.type;
 
 					// Handle cancelled state with reason message
 					if (state.type === IChatToolInvocation.StateKind.Cancelled && state.reasonMessage) {
@@ -87,11 +91,27 @@ export class ChatToolProgressSubPart extends BaseChatToolInvocationSubPart {
 				const isHidden = !this.hasMeaningfulContent(progressContent);
 				this.isHidden.set(isHidden, undefined);
 				if (isHidden) {
+					rendered.clear();
 					dom.clearNode(container);
 					return;
 				}
+
+				// A new message in the same state (e.g. an external tool updating its label while it
+				// runs) updates the rendered row in place instead of rebuilding it.
+				const content = typeof progressContent === 'string' ? new MarkdownString().appendText(progressContent) : progressContent!;
+				const shimmer = shouldShimmerForTool(this.toolInvocation, progressContent);
+				const current = rendered.value;
+				if (current && current.stateType === stateType && !current.shimmer && !shimmer) {
+					if (current.content.value !== content.value) {
+						current.content = content;
+						current.part.updateMessage(content);
+					}
+					return;
+				}
+
 				const shouldAnnounce = this.toolInvocation.kind === 'toolInvocation' && this.hasMeaningfulContent(progressContent) ? this.computeShouldAnnounce(key) : false;
-				const part = reader.store.add(this.renderProgressContent(progressContent!, shouldAnnounce));
+				const part = this.renderProgressContent(content, shouldAnnounce);
+				rendered.value = { part, content, stateType, shimmer, dispose: () => part.dispose() };
 				dom.reset(container, part.domNode);
 			}));
 			return container;

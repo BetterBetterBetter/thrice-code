@@ -2311,6 +2311,7 @@ export function createApiFactoryAndRegisterActors(accessor: ServicesAccessor): I
 			ChatResponseTurn: extHostTypes.ChatResponseTurn,
 			ChatResponseTurn2: extHostTypes.ChatResponseTurn2,
 			ChatSubagentToolInvocationData: extHostTypes.ChatSubagentToolInvocationData,
+			ChatFileEditToolInvocationData: extHostTypes.ChatFileEditToolInvocationData,
 			ChatToolInvocationPart: extHostTypes.ChatToolInvocationPart,
 			ChatLocation: extHostTypes.ChatLocation,
 			ChatSessionStatus: extHostTypes.ChatSessionStatus,

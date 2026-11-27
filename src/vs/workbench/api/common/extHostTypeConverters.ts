@@ -3167,6 +3167,7 @@ export namespace ChatToolInvocationPart {
 				presentationOverrides,
 				commandLine: data.commandLine,
 				language: data.language,
+				intention: typeof data.intention === 'string' && data.intention.trim() ? data.intention.trim() : undefined,
 				terminalCommandOutput: typeof data.output?.text === 'string' ? {
 					text: data.output.text,
 				} : undefined,
@@ -3206,6 +3207,15 @@ export namespace ChatToolInvocationPart {
 					}
 				})
 			};
+		} else if (data instanceof types.ChatFileEditToolInvocationData) {
+			const count = (value: unknown) => typeof value === 'number' && Number.isFinite(value) && value > 0 ? Math.floor(value) : 0;
+			return {
+				kind: 'thriceFileEdit',
+				uri: data.uri.toString(),
+				added: count(data.added),
+				removed: count(data.removed),
+				change: data.change === 'add' || data.change === 'delete' ? data.change : 'update',
+			};
 		} else if (data instanceof types.ChatSubagentToolInvocationData) {
 			// Convert extension API subagent tool data to internal format
 			return {
@@ -3215,6 +3225,7 @@ export namespace ChatToolInvocationPart {
 				prompt: data.prompt,
 				result: data.result,
 				modelName: data.modelName,
+				...(typeof data.chatProvider === 'string' && data.chatProvider.trim() ? { chatProvider: data.chatProvider.trim() } : {}),
 			};
 		}
 		return data;

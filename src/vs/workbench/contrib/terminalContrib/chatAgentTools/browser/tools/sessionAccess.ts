@@ -3,6 +3,7 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
+import { Codicon } from '../../../../../../base/common/codicons.js';
 import { DisposableStore } from '../../../../../../base/common/lifecycle.js';
 import { URI } from '../../../../../../base/common/uri.js';
 import { Range } from '../../../../../../editor/common/core/range.js';
@@ -339,10 +340,13 @@ export class SessionAccess {
 		const directory = stringArg(args, 'working_directory');
 		const cwd = directory ? URI.file(directory) : undefined;
 		const name = command ? agentWindowShellSessionName(command) : 'Terminal';
+		// A terminal the user asked for looks like any other. One the agent opened for its own work
+		// shows the agent icon, and the extension closes it when the agent's turn ends.
+		const forUser = args.for_user === true;
 		const instance = await this._terminals.createTerminal({
 			cwd,
 			location: TerminalLocation.Panel,
-			config: { name, cwd, hideFromUser: false, isFeatureTerminal: false },
+			config: { name, cwd, hideFromUser: false, isFeatureTerminal: false, ...(forUser ? {} : { icon: Codicon.robot }) },
 		});
 		if (command) {
 			await Promise.race([
@@ -353,7 +357,10 @@ export class SessionAccess {
 		this._terminals.setActiveInstance(instance);
 		await this._terminals.focusInstance(instance);
 		const running = command ? ` running \`${command}\`` : '';
-		return `Opened the terminal panel on terminal ${instance.instanceId} "${name}"${running}. Call readTerminal or waitTerminal with id ${instance.instanceId} for output.`;
+		const lifetime = forUser
+			? ' It is the user\'s terminal and stays open.'
+			: ` It is yours: call closeTerminal with id ${instance.instanceId} as soon as you are done with it. It is closed when your turn ends.`;
+		return `Opened the terminal panel on terminal ${instance.instanceId} "${name}"${running}. Call readTerminal or waitTerminal with id ${instance.instanceId} for output.${lifetime}`;
 	}
 
 	private async _writeTerminal(args: Record<string, unknown>): Promise<string> {

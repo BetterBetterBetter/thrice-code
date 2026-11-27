@@ -482,6 +482,12 @@ declare module 'vscode' {
 
 	// #region Steering
 
+	/** A message the user sent to steer a running request. */
+	export interface ChatSteeringMessage {
+		readonly id: string;
+		readonly prompt: string;
+	}
+
 	export interface ChatContext {
 		/**
 		 * Set to `true` by the editor to request the language model gracefully
@@ -489,6 +495,15 @@ declare module 'vscode' {
 		 * will immediately follow up with a new request in the same conversation.
 		 */
 		readonly yieldRequested: boolean;
+
+		/**
+		 * Registers a handler for steering messages: messages the user sends while this request is
+		 * still running. Return `true` once the message has been delivered into the running request;
+		 * the editor then removes it from its queue and does not send it as a new request. Return
+		 * `false` to decline, and the editor falls back to setting {@link yieldRequested}.
+		 * Only defined on the context passed to a chat participant's request handler.
+		 */
+		readonly registerSteeringHandler?: (handler: (message: ChatSteeringMessage) => Thenable<boolean> | boolean) => Disposable;
 
 		/**
 		 * The resource URI identifying the chat session this context belongs to.

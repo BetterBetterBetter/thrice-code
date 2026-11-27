@@ -2021,6 +2021,49 @@ suite('Response', () => {
 		assert.strictEqual(IChatToolInvocation.isComplete(response.value[0]), true);
 	});
 
+	test('external tool updates replace the message of an in-progress invocation', () => {
+		const response = store.add(new Response([]));
+		const update = (isComplete: boolean, invocationMessage?: string, pastTenseMessage?: string) => response.updateContent({
+			kind: 'externalToolInvocationUpdate',
+			toolCallId: 'write-1',
+			toolName: 'Write',
+			isComplete,
+			invocationMessage,
+			pastTenseMessage,
+		});
+
+		update(false, 'Writing foo.ts', 'Wrote foo.ts');
+		const invocation = response.value[0];
+		assert.ok(invocation.kind === 'toolInvocation');
+		const state = invocation.state.get();
+		assert.ok(state.type === IChatToolInvocation.StateKind.Executing);
+		const seen: string[] = [];
+		store.add(autorun(reader => {
+			state.progress.read(reader);
+			const message = invocation.invocationMessage;
+			seen.push(typeof message === 'string' ? message : message.value);
+		}));
+
+		update(false, 'Writing foo.ts · 140 lines');
+		update(false, 'Writing foo.ts · 140 lines'); // unchanged: no re-render
+		update(true);
+		update(false, 'Writing foo.ts · 999 lines'); // late: ignored
+
+		assert.deepStrictEqual({
+			seen,
+			count: response.value.length,
+			invocationMessage: invocation.invocationMessage,
+			pastTenseMessage: invocation.pastTenseMessage,
+			complete: IChatToolInvocation.isComplete(invocation),
+		}, {
+			seen: ['Writing foo.ts', 'Writing foo.ts · 140 lines'],
+			count: 1,
+			invocationMessage: 'Writing foo.ts · 140 lines',
+			pastTenseMessage: 'Wrote foo.ts',
+			complete: true,
+		});
+	});
+
 	test('external terminal tool updates preserve toolSpecificData when first pushed as complete', () => {
 		const response = store.add(new Response([]));
 		const toolSpecificData: IChatTerminalToolInvocationData = {

@@ -118,6 +118,18 @@
 					"default": "interactive",
 					"description": "How the next chat turn runs. Interactive and Debug change the project, Plan and Spec only write, Ask and Triage only answer, and Background finishes without waiting."
 				},
+				"thrice.agents.maxDepth": {
+					"type": "number",
+					"default": 1,
+					"minimum": 0,
+					"description": "How deep agents may start other agents through the thrice MCP server. 1 lets a chat agent start agents that cannot start more. 0 turns runAgent off."
+				},
+				"thrice.agents.maxRunning": {
+					"type": "number",
+					"default": 4,
+					"minimum": 1,
+					"description": "Most agents started by other agents that may run at once in this window."
+				},
 				"thrice.chat.ghostText.enabled": {
 					"type": "boolean",
 					"default": true,

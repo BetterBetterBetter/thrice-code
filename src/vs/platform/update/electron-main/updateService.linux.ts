@@ -48,7 +48,7 @@ export class LinuxUpdateService extends AbstractUpdateService {
 		const url = this.buildUpdateFeedUrl(this.quality, this.productService.commit!, { background, internalOrg });
 		this.setState(State.CheckingForUpdates(explicit));
 
-		this.requestService.request({ url, callSite: 'updateService.linux.checkForUpdates' }, CancellationToken.None)
+		this.requestService.request({ url, followRedirects: 10, callSite: 'updateService.linux.checkForUpdates' }, CancellationToken.None)
 			.then<IUpdate | null>(asJson)
 			.then(update => {
 				// If updates were disabled mid-check, ignore the result so we don't leave the Disabled state.
@@ -56,7 +56,9 @@ export class LinuxUpdateService extends AbstractUpdateService {
 					return;
 				}
 
-				if (!update || !update.url || !update.version || !update.productVersion) {
+				// GitHub's latest-release asset does not vary by commit, so the
+				// feed for the running build must not be offered again.
+				if (!update || !update.url || !update.version || !update.productVersion || update.version === this.productService.commit) {
 					this.setState(State.Idle(UpdateType.Archive, undefined, explicit || undefined));
 				} else {
 					this.setState(State.AvailableForDownload(update));

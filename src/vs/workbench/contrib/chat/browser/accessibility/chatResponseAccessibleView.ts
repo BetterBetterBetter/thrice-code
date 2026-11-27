@@ -22,7 +22,7 @@ import { getTerminalExecutionTargetDescription, migrateLegacyTerminalToolSpecifi
 import { autoModeRoutingTitle } from '../../common/chatAutoModeExplainability.js';
 import { formatChatToolError } from '../../common/chatProgressFormatting.js';
 import { ChatContextKeys } from '../../common/actions/chatContextKeys.js';
-import { IChatAgentFeedbackReviewConfirmationData, IChatAutomationConfigurationData, IChatAutomationConfiguredData, IChatExtensionsContent, IChatGeneratedImageData, IChatModifiedFilesConfirmationData, IChatPullRequestContent, IChatSearchToolInvocationData, IChatSessionTargetData, IChatSimpleToolInvocationData, IChatSubagentToolInvocationData, IChatTerminalToolInvocationData, IChatTodoListContent, IChatToolInputInvocationData, IChatToolInvocation, IChatToolResourcesInvocationData, ILegacyChatTerminalToolInvocationData, IToolResultOutputDetailsSerialized, isLegacyChatTerminalToolInvocationData } from '../../common/chatService/chatService.js';
+import { IChatAgentFeedbackReviewConfirmationData, IChatThriceFileEditData, IChatAutomationConfigurationData, IChatAutomationConfiguredData, IChatExtensionsContent, IChatGeneratedImageData, IChatModifiedFilesConfirmationData, IChatPullRequestContent, IChatSearchToolInvocationData, IChatSessionTargetData, IChatSimpleToolInvocationData, IChatSubagentToolInvocationData, IChatTerminalToolInvocationData, IChatTodoListContent, IChatToolInputInvocationData, IChatToolInvocation, IChatToolResourcesInvocationData, ILegacyChatTerminalToolInvocationData, IToolResultOutputDetailsSerialized, isLegacyChatTerminalToolInvocationData } from '../../common/chatService/chatService.js';
 import { IChatProgressResponseContent } from '../../common/model/chatModel.js';
 import { IChatResponseViewModel, isResponseVM, isRequestVM, isScheduledRequestVM } from '../../common/model/chatViewModel.js';
 import { annotateSpecialMarkdownContentWithSource } from '../../common/widget/annotations.js';
@@ -105,7 +105,7 @@ export class ChatResponseAccessibleView implements IAccessibleViewImplementation
  */
 export type ChatCodeBlockDescriber = (languageId: string, text: string, raw: string) => string | undefined;
 
-type ToolSpecificData = IChatTerminalToolInvocationData | ILegacyChatTerminalToolInvocationData | IChatToolInputInvocationData | IChatExtensionsContent | IChatPullRequestContent | IChatTodoListContent | IChatSubagentToolInvocationData | IChatSimpleToolInvocationData | IChatSearchToolInvocationData | IChatToolResourcesInvocationData | IChatModifiedFilesConfirmationData | IChatAgentFeedbackReviewConfirmationData | IChatSessionTargetData | IChatGeneratedImageData | IChatAutomationConfigurationData | IChatAutomationConfiguredData;
+type ToolSpecificData = IChatTerminalToolInvocationData | ILegacyChatTerminalToolInvocationData | IChatToolInputInvocationData | IChatExtensionsContent | IChatPullRequestContent | IChatTodoListContent | IChatSubagentToolInvocationData | IChatSimpleToolInvocationData | IChatSearchToolInvocationData | IChatToolResourcesInvocationData | IChatModifiedFilesConfirmationData | IChatAgentFeedbackReviewConfirmationData | IChatSessionTargetData | IChatGeneratedImageData | IChatAutomationConfigurationData | IChatAutomationConfiguredData | IChatThriceFileEditData;
 type ResultDetails = Array<URI | Location> | IToolResultInputOutputDetails | IToolResultOutputDetails | IToolResultOutputDetailsSerialized;
 
 export const CHAT_ACCESSIBLE_VIEW_INCLUDE_THINKING_STORAGE_KEY = 'chat.accessibleView.includeThinking';
@@ -135,6 +135,14 @@ export function getToolSpecificDataDescription(toolSpecificData: ToolSpecificDat
 	}
 
 	switch (toolSpecificData.kind) {
+		case 'thriceFileEdit': {
+			const name = basename(URI.parse(toolSpecificData.uri));
+			return toolSpecificData.change === 'add'
+				? localize('chatAccessibleView.thriceFileAdded', "Created {0}, {1} lines added", name, toolSpecificData.added)
+				: toolSpecificData.change === 'delete'
+					? localize('chatAccessibleView.thriceFileDeleted', "Deleted {0}", name)
+					: localize('chatAccessibleView.thriceFileEdited', "Edited {0}, {1} lines added, {2} removed", name, toolSpecificData.added, toolSpecificData.removed);
+		}
 		case 'subagent': {
 			const parts: string[] = [];
 			const agentName = toolSpecificData.agentDisplayName ?? toolSpecificData.agentName;

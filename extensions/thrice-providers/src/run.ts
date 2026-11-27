@@ -1,7 +1,8 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import { homedir } from 'node:os';
 import type { EditorToolBridge } from './editorTools';
-import { withEditorTools } from './editorToolPolicy';
+import { editorToolEnvironment, withEditorTools } from './editorToolPolicy';
+import type { ChildRunSink } from './agents';
 import { instanceArgv, missingEnvironment, type ChatTurnMode, type ProviderInstance } from './instances';
 import { createEventDecoder, type AgentEvent } from './events';
 
@@ -13,6 +14,10 @@ export interface RunOptions {
 	readonly mode?: ChatTurnMode;
 	readonly editorTools?: EditorToolBridge;
 	readonly extraDirectories?: readonly string[];
+	/** How many agents started this one: 0 for a chat turn. Limits runAgent through the thrice MCP. */
+	readonly agentDepth?: number;
+	/** Shows the agents this run starts, nested under its runAgent calls. */
+	readonly childRuns?: ChildRunSink;
 	/** Answer text only. */
 	readonly onText?: (text: string) => void;
 	/** Every decoded event, including text, thinking and tool activity (Contract 4). */
@@ -100,12 +105,22 @@ export function runInstance(instance: ProviderInstance, prompt: string, options:
 				resolve();
 			}
 		};
-		const launch = options.editorTools?.prepare(prompt);
+		const launch = options.editorTools?.prepare(prompt, {
+			depth: options.agentDepth ?? 0,
+			agent: instance.id,
+			displayName: instance.displayName,
+			model: options.model,
+			mode: options.mode,
+			cwd: options.cwd,
+			extraDirectories: options.extraDirectories,
+			children: options.childRuns,
+		});
 		let child: ChildProcess;
 		try {
+			const base = options.env ?? process.env;
 			child = spawn(instance.command, withEditorTools(instance.driver, instanceArgv(instance, prompt, options.model, options.mode), launch, options.extraDirectories), {
 				cwd: options.cwd,
-				env: childEnv(instance, options.env ?? process.env),
+				env: { ...childEnv(instance, base), ...editorToolEnvironment(instance.driver, launch, base) },
 				detached: process.platform !== 'win32',
 				stdio: ['ignore', 'pipe', 'pipe'],
 				windowsHide: true,

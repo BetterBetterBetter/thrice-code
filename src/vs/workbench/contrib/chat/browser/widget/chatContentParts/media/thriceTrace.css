@@ -1,0 +1,194 @@
+/*---------------------------------------------------------------------------------------------
+ *  Copyright (c) Microsoft Corporation. All rights reserved.
+ *  Licensed under the MIT License. See License.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
+/*
+ * Thrice's agent trace, after Cursor's: steps read as plain muted lines with no gutter glyphs,
+ * a chevron appears on hover, and file edits are inline rows with line counts.
+ */
+
+/* Collapsed step headers ("Thought for 6s", "Explored 3 files, 2 searches") lose the glyph. */
+.interactive-session .interactive-response.chat-thrice-response .value .chat-thinking-box > .chat-used-context-label .monaco-button.monaco-icon-button > :first-child:not(.monaco-button-mdlabel):not(.chat-collapsible-hover-chevron) {
+	display: none;
+}
+
+/* File rows and command cards carry their own icon, so they drop the gutter glyph and its indent. */
+.interactive-session .interactive-response .value .chat-tool-call-with-icon:has(.chat-thrice-file-edit),
+.interactive-session .interactive-response.chat-thrice-response .value .chat-tool-call-with-icon:has(.chat-terminal-content-part) {
+	padding-left: 0;
+
+	> .chat-tool-call-icon {
+		display: none;
+	}
+}
+
+/* One file an edit call changed: [icon] name  folder   +12 −3  › */
+.interactive-session .interactive-response .value .chat-thrice-file-edit {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	box-sizing: border-box;
+	max-width: 100%;
+	min-height: 26px;
+	margin: 0 0 var(--vscode-spacing-size80, 8px) 0;
+	padding: 2px 8px;
+	border: 1px solid var(--vscode-chat-requestBorder, var(--vscode-widget-border, transparent));
+	border-radius: var(--vscode-cornerRadius-medium, 6px);
+	color: var(--vscode-foreground);
+	font-size: var(--vscode-chat-font-size-body-m);
+	line-height: 20px;
+	cursor: pointer;
+	user-select: none;
+
+	&:hover {
+		background-color: var(--vscode-list-hoverBackground);
+	}
+
+	&:focus-visible {
+		outline: 1px solid var(--vscode-focusBorder);
+		outline-offset: -1px;
+	}
+
+	> .chat-thrice-file-edit-icon {
+		flex-shrink: 0;
+		width: 16px;
+		height: 16px;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+
+		&::before {
+			width: 16px;
+			height: 16px;
+			background-size: 16px;
+			background-position: center;
+			background-repeat: no-repeat;
+		}
+	}
+
+	> .chat-thrice-file-edit-name {
+		flex-shrink: 0;
+		max-width: 60%;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	> .chat-thrice-file-edit-folder {
+		flex: 1 1 auto;
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		color: var(--vscode-descriptionForeground);
+		font-size: var(--vscode-chat-font-size-body-s);
+	}
+
+	> .chat-thrice-file-edit-stats {
+		flex-shrink: 0;
+		display: inline-flex;
+		gap: 6px;
+		margin-left: auto;
+		font-family: var(--monaco-monospace-font);
+		font-size: var(--vscode-chat-font-size-body-s);
+		font-variant-numeric: tabular-nums;
+	}
+
+	.chat-thrice-file-edit-added {
+		color: var(--vscode-chat-linesAddedForeground, var(--vscode-gitDecoration-addedResourceForeground));
+	}
+
+	.chat-thrice-file-edit-removed {
+		color: var(--vscode-chat-linesRemovedForeground, var(--vscode-gitDecoration-deletedResourceForeground));
+	}
+
+	.chat-thrice-file-edit-deleted {
+		color: var(--vscode-descriptionForeground);
+	}
+
+	> .chat-thrice-file-edit-chevron {
+		flex-shrink: 0;
+		color: var(--vscode-descriptionForeground);
+		font-size: var(--vscode-codiconFontSize-compact, 14px);
+		opacity: 0;
+	}
+
+	&:hover > .chat-thrice-file-edit-chevron,
+	&:focus-visible > .chat-thrice-file-edit-chevron {
+		opacity: 1;
+	}
+
+	&.change-delete > .chat-thrice-file-edit-name {
+		text-decoration: line-through;
+		color: var(--vscode-descriptionForeground);
+	}
+
+	&.failed {
+		opacity: 0.6;
+	}
+
+	/* Still being written: the name shimmers like a working step. */
+	&.running > .chat-thrice-file-edit-name {
+		background: linear-gradient(90deg, var(--vscode-descriptionForeground) 0%, var(--vscode-foreground) 50%, var(--vscode-descriptionForeground) 100%);
+		background-size: 200% 100%;
+		-webkit-background-clip: text;
+		background-clip: text;
+		color: transparent;
+		animation: chat-thrice-file-edit-shimmer 1.6s linear infinite;
+	}
+}
+
+@keyframes chat-thrice-file-edit-shimmer {
+	from { background-position: 100% 0; }
+	to { background-position: -100% 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.interactive-session .interactive-response .value .chat-thrice-file-edit.running > .chat-thrice-file-edit-name {
+		animation: none;
+		color: var(--vscode-foreground);
+		background: none;
+	}
+}
+
+/* The last lines of a finished command's output, under its collapsed header. */
+.chat-terminal-output-peek {
+	display: none;
+}
+
+.interactive-session .interactive-response.chat-thrice-response .value :is(
+	.chat-terminal-thinking-collapsible.chat-used-context-collapsed,
+	.chat-terminal-content-part:not(:has(.chat-terminal-output-container.expanded))
+) > .chat-terminal-output-peek {
+	display: block;
+	margin: 2px 0 var(--vscode-spacing-size80, 8px) 0;
+	padding: 2px 0 2px 10px;
+	border-left: 2px solid var(--vscode-chat-requestBorder, var(--vscode-widget-border, transparent));
+	color: var(--vscode-descriptionForeground);
+	font-family: var(--monaco-monospace-font);
+	font-size: var(--vscode-chat-font-size-body-s);
+	line-height: 1.5;
+
+	> .chat-terminal-output-peek-line {
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: pre;
+	}
+}
+
+/* A sub-agent in a Thrice turn is a plain row led by its provider's logo, not a bordered pill. */
+.interactive-session .interactive-response.chat-thrice-response .value .chat-subagent-open-chat-toolbar .action-item.chat-subagent-pill-widget .chat-subagent-pill-content {
+	border-color: transparent;
+	padding-left: 0;
+}
+
+.interactive-session .interactive-response.chat-thrice-response .value .chat-subagent-open-chat-toolbar .action-item.chat-subagent-pill-widget:not(.disabled):hover .chat-subagent-pill-content {
+	border-color: var(--vscode-chat-requestBorder, var(--vscode-input-border, transparent));
+	padding-left: var(--vscode-spacing-size60);
+}
+
+/* Commands in a Thrice turn lose the header glyph too. */
+.interactive-session .interactive-response.chat-thrice-response .value .chat-terminal-thinking-collapsible > .chat-used-context-label .monaco-button.monaco-icon-button > :first-child:not(.monaco-button-mdlabel):not(.chat-collapsible-hover-chevron) {
+	display: none;
+}

@@ -25,12 +25,21 @@ export interface IThriceRecordTurnEditsArgs {
 	readonly toolInvocationToken?: unknown;
 	/** File URIs as strings (or URIs). `before: null` = created during the turn, `after: null` = deleted. */
 	readonly edits: ReadonlyArray<{ readonly uri: string | UriComponents; readonly before: string | null | undefined; readonly after: string | null | undefined }>;
+	/**
+	 * `true` while the turn is still running: the edits are recorded right away but the
+	 * turn's external edit mode stays active, so the agent's later writes keep counting as
+	 * agent edits. A file may be recorded several times per turn; its first recording's
+	 * `before` is kept as the turn baseline. Send a final call without `partial` (with the
+	 * whole turn's edits, or none) when the turn ends.
+	 */
+	readonly partial?: boolean;
 }
 
 export interface IParsedThriceTurnEdits {
 	readonly sessionResource: URI | undefined;
 	readonly requestId: string | undefined;
 	readonly edits: ReadonlyArray<{ readonly uri: URI; readonly before: string | undefined; readonly after: string | undefined }>;
+	readonly partial: boolean;
 }
 
 function toUri(value: unknown): URI | undefined {
@@ -89,5 +98,48 @@ export function parseThriceTurnEditsArgs(arg: unknown): IParsedThriceTurnEdits |
 		edits.push({ uri, before, after });
 	}
 
-	return { sessionResource, requestId, edits };
+	return { sessionResource, requestId, edits, partial: raw.partial === true };
+}
+
+/**
+ * Opens what one file looked like before and after a Thrice turn: the diff of the request's
+ * recorded edits to it, or the file itself when none are recorded (yet). Resolves to true when it
+ * showed the diff. Argument: {@link IThriceOpenTurnFileDiffArgs}.
+ */
+export const THRICE_OPEN_TURN_FILE_DIFF_COMMAND_ID = '_thrice.chat.openTurnFileDiff';
+
+export interface IThriceOpenTurnFileDiffArgs {
+	/** The chat session. Without it, the most recently active local Thrice session. */
+	readonly sessionResource?: UriComponents | string;
+	/** The request whose edits to show. Without it, the session's latest Thrice request. */
+	readonly requestId?: string;
+	/** The file. */
+	readonly uri: UriComponents | string;
+	/** Open beside the active editor. */
+	readonly sideBySide?: boolean;
+}
+
+export interface IParsedThriceOpenTurnFileDiff {
+	readonly sessionResource: URI | undefined;
+	readonly requestId: string | undefined;
+	readonly uri: URI;
+	readonly sideBySide: boolean;
+}
+
+/** Validates the command argument. Returns `undefined` when it names no file. */
+export function parseThriceOpenTurnFileDiffArgs(arg: unknown): IParsedThriceOpenTurnFileDiff | undefined {
+	if (!arg || typeof arg !== 'object') {
+		return undefined;
+	}
+	const raw = arg as Partial<IThriceOpenTurnFileDiffArgs>;
+	const uri = toUri(raw.uri);
+	if (!uri) {
+		return undefined;
+	}
+	return {
+		sessionResource: toUri(raw.sessionResource),
+		requestId: typeof raw.requestId === 'string' && raw.requestId ? raw.requestId : undefined,
+		uri,
+		sideBySide: raw.sideBySide === true,
+	};
 }

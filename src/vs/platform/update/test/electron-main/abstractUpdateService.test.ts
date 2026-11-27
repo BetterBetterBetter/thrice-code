@@ -21,7 +21,7 @@ import { IRequestService } from '../../../request/common/request.js';
 import { IApplicationStorageMainService } from '../../../storage/electron-main/storageMainService.js';
 import { NullTelemetryService } from '../../../telemetry/common/telemetryUtils.js';
 import { DisablementReason, IUpdate, State, StateType } from '../../common/update.js';
-import { AbstractUpdateService, IUpdateURLOptions } from '../../electron-main/abstractUpdateService.js';
+import { AbstractUpdateService, createUpdateURL, isGitHubReleasesUpdateUrl, IUpdateURLOptions } from '../../electron-main/abstractUpdateService.js';
 
 class TestMeteredConnectionService extends Disposable implements IMeteredConnectionService {
 	declare readonly _serviceBrand: undefined;
@@ -613,5 +613,27 @@ suite('AbstractUpdateService', () => {
 
 		assert.deepStrictEqual(service.state, { type: StateType.Disabled, reason: DisablementReason.ManuallyDisabled });
 		assert.deepStrictEqual(states, [StateType.Disabled], 'should go straight to Disabled without a Cancelling flash');
+	});
+});
+
+suite('createUpdateURL', () => {
+	test('keeps the VS Code update API for a non-GitHub feed', () => {
+		assert.strictEqual(
+			createUpdateURL('https://update.example', 'darwin-arm64', 'stable', 'abc123', { internalOrg: 'none' }),
+			'https://update.example/api/update/darwin-arm64/stable/abc123?u=none'
+		);
+	});
+
+	test('maps a GitHub releases page to the latest platform asset', () => {
+		assert.strictEqual(isGitHubReleasesUpdateUrl('https://github.com/BetterBetterBetter/thrice-code/releases'), true);
+		assert.strictEqual(isGitHubReleasesUpdateUrl('https://update.example'), false);
+		assert.strictEqual(
+			createUpdateURL('https://github.com/BetterBetterBetter/thrice-code/releases/', 'darwin-arm64', 'stable', 'abc123'),
+			'https://github.com/BetterBetterBetter/thrice-code/releases/latest/download/darwin-arm64.json'
+		);
+		assert.strictEqual(
+			createUpdateURL('https://github.com/BetterBetterBetter/thrice-code/releases', 'win32-x64-user', 'insider', 'abc123'),
+			'https://github.com/BetterBetterBetter/thrice-code/releases/latest/download/insider-win32-x64-user.json'
+		);
 	});
 });

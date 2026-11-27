@@ -74,6 +74,9 @@ suite('VoiceChat', () => {
 		invokeAgent(id: string, request: IChatAgentRequest, progress: (part: IChatProgress[]) => void, history: IChatAgentHistoryEntry[], token: CancellationToken): Promise<IChatAgentResult> { throw new Error(); }
 		setRequestTools(agent: string, requestId: string, tools: UserSelectedTools): void { }
 		setYieldRequested(agent: string, requestId: string, value: boolean): void { }
+		steer(): Promise<boolean> { return Promise.resolve(false); }
+		setSteerable(): void { }
+		isSteerable(): boolean { return false; }
 		getFollowups(id: string, request: IChatAgentRequest, result: IChatAgentResult, history: IChatAgentHistoryEntry[], token: CancellationToken): Promise<IChatFollowup[]> { throw new Error(); }
 		getActivatedAgents(): IChatAgent[] { return agents; }
 		getAgents(): IChatAgent[] { return agents; }

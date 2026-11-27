@@ -121,9 +121,12 @@ test('a spawned sub-agent is listed from the reply that started it', () => {
 	assert.deepEqual(listed.map(chat => chat.running), [true, false]);
 });
 
-test('running sub-agents are a row above the text field and open as a side chat tab', () => {
+test('running sub-agents are a collapsible list above the text field and open as a side chat tab', () => {
 	assert.match(runningSubagents, /class RunningSubagentsRow/);
-	assert.match(runningSubagents, /container\.hidden = spawned\.length === 0/);
+	assert.match(runningSubagents, /const visible = spawned\.length > 0/);
+	assert.match(runningSubagents, /ChatInputStackSlot\.Docked/);
+	assert.match(runningSubagents, /chat-running-subagents-list/);
+	assert.match(chatCss, /\.chat-running-subagents-list\.collapsed/);
 	assert.match(runningSubagents, /subagentChatsInModel/);
 	assert.match(runningSubagents, /subagentEditorResource/);
 	assert.match(runningSubagents, /openSessionEditor/);

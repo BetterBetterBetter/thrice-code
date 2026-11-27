@@ -237,7 +237,7 @@ export class Win32UpdateService extends AbstractUpdateService implements IRelaun
 		const token = cts.token;
 
 		const headers = getUpdateRequestHeaders(this.productService.version);
-		const promise = this.requestService.request({ url, headers, callSite: 'updateService.win32.checkForUpdates' }, token)
+		const promise = this.requestService.request({ url, headers, followRedirects: 10, callSite: 'updateService.win32.checkForUpdates' }, token)
 			.then<IUpdate | null>(asJson)
 			.then(update => {
 				const updateType = this.getUpdateType();
@@ -246,7 +246,9 @@ export class Win32UpdateService extends AbstractUpdateService implements IRelaun
 					return Promise.resolve(null);
 				}
 
-				if (!update || !update.url || !update.version || !update.productVersion) {
+				// GitHub's latest-release asset does not vary by commit, so the
+				// feed for the running build must not be offered again.
+				if (!update || !update.url || !update.version || !update.productVersion || update.version === this.productService.commit) {
 					// If we were checking for an overwrite update and found nothing newer,
 					// restore the Ready state with the pending update
 					if (this.state.type === StateType.Overwriting) {

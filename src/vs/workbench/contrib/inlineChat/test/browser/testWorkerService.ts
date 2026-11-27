@@ -6,10 +6,10 @@ import { URI } from '../../../../../base/common/uri.js';
 import { mock } from '../../../../../base/test/common/mock.js';
 import { Range } from '../../../../../editor/common/core/range.js';
 import { IModelService } from '../../../../../editor/common/services/model.js';
-import { assertType } from '../../../../../base/common/types.js';
-import { DiffAlgorithmName, IEditorWorkerService, ILineChange } from '../../../../../editor/common/services/editorWorker.js';
+import { DiffAlgorithmName, IEditorWorkerService, ILineChange, IStringDiffOptions } from '../../../../../editor/common/services/editorWorker.js';
 import { IDocumentDiff, IDocumentDiffProviderOptions } from '../../../../../editor/common/diff/documentDiffProvider.js';
-import { EditorWorker } from '../../../../../editor/common/services/editorWebWorker.js';
+import { computeStringDiff, EditorWorker } from '../../../../../editor/common/services/editorWebWorker.js';
+import { StringEdit } from '../../../../../editor/common/core/edits/stringEdit.js';
 import { LineRange } from '../../../../../editor/common/core/ranges/lineRange.js';
 import { MovedText } from '../../../../../editor/common/diff/linesDiffComputer.js';
 import { LineRangeMapping, DetailedLineRangeMapping, RangeMapping } from '../../../../../editor/common/diff/rangeMapping.js';
@@ -34,6 +34,10 @@ export class TestWorkerService extends mock<IEditorWorkerService>() implements I
 		return undefined;
 	}
 
+	override computeStringEditFromDiff(original: string, modified: string, options: IStringDiffOptions, algorithm: DiffAlgorithmName): Promise<StringEdit> {
+		return computeStringDiff(original, modified, options, algorithm);
+	}
+
 	override async computeDiff(original: URI, modified: URI, options: IDocumentDiffProviderOptions, algorithm: DiffAlgorithmName): Promise<IDocumentDiff | null> {
 		await new Promise<void>(resolve => disposableTimeout(() => resolve(), 0, this._store));
 		if (this._store.isDisposed) {
@@ -42,9 +46,9 @@ export class TestWorkerService extends mock<IEditorWorkerService>() implements I
 
 		const originalModel = this._modelService.getModel(original);
 		const modifiedModel = this._modelService.getModel(modified);
-
-		assertType(originalModel);
-		assertType(modifiedModel);
+		if (!originalModel || !modifiedModel) {
+			return null; // like the real service when a model is gone, e.g. disposed meanwhile
+		}
 
 		this._worker.$acceptNewModel({
 			url: originalModel.uri.toString(),

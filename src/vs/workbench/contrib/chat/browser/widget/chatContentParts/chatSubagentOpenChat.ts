@@ -49,6 +49,7 @@ import { getChatMarkdownRenderOptions } from '../chatContentMarkdownRenderer.js'
 import { getModelConfigDisplayValues, getModelConfigProperty, getModelConfigValueLabel, MODEL_CONFIG_GROUP_CONTEXT, MODEL_CONFIG_GROUP_EFFORT } from '../input/modelPicker/modelPickerModelConfig.js';
 import { renderFileWidgets } from './chatInlineAnchorWidget.js';
 import { IChatMarkdownAnchorService } from './chatMarkdownAnchorService.js';
+import { providerIdLogoIcon } from '../../../common/thriceProviderLogos.js';
 import { getCompactCodicon } from '../../chatIcons.js';
 import { ChatActivityLabelTransition } from './chatActivityLabelTransition.js';
 
@@ -70,6 +71,8 @@ export interface IOpenSubagentChatContext {
 	readonly runtimeModelConfiguration?: IAgentRuntimeModelConfiguration;
 	/** Copilot credits (AIC) this subagent has consumed so far. */
 	readonly credits?: number;
+	/** Agent provider that runs the subagent, such as `codex-hub`; its logo marks the pill. */
+	readonly chatProvider?: string;
 	readonly parentModelId?: string;
 	readonly parentModelName?: string;
 	readonly parentResolvedModelId?: string;
@@ -677,7 +680,11 @@ export class OpenSubagentChatActionViewItem extends BaseActionViewItem {
 	}
 
 	protected get statusIcon(): ThemeIcon {
-		return this.status === 'failed' ? Codicon.error : Codicon.commentDiscussion;
+		if (this.status === 'failed') {
+			return Codicon.error;
+		}
+		const context = this._context as { readonly chatProvider?: unknown } | undefined;
+		return providerIdLogoIcon(typeof context?.chatProvider === 'string' ? context.chatProvider : undefined) ?? Codicon.commentDiscussion;
 	}
 
 	private _updateStatus(): void {

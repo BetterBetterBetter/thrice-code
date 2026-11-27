@@ -1320,6 +1320,14 @@ export class Response extends AbstractResponse implements IDisposable {
 					toolResultError: progress.errorMessage,
 					toolResultDetails: progress.resultDetails
 				});
+			} else if (!IChatToolInvocation.isComplete(existingInvocation)) {
+				// Live label of an in-progress invocation, e.g. "Writing foo.ts · 140 lines…".
+				if (progress.pastTenseMessage !== undefined) {
+					existingInvocation.pastTenseMessage = progress.pastTenseMessage;
+				}
+				if (progress.invocationMessage !== undefined) {
+					existingInvocation.updateInvocationMessage(progress.invocationMessage);
+				}
 			}
 			return;
 		}

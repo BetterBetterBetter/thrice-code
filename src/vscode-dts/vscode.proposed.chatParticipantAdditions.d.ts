@@ -239,6 +239,12 @@ declare module 'vscode' {
 		};
 
 		/**
+		 * Short description of why the command is run, shown as the title instead of
+		 * the generic "Ran" verb.
+		 */
+		intention?: string;
+
+		/**
 		 * Terminal command output. Displayed when the terminal is no longer available.
 		 */
 		output?: {
@@ -343,7 +349,33 @@ declare module 'vscode' {
 		 */
 		modelName?: string;
 
+		/**
+		 * Agent provider id that runs the subagent, such as `codex-hub`, when it differs from the
+		 * parent's. Used for the subagent's logo and label.
+		 */
+		chatProvider?: string;
+
 		constructor(description?: string, agentName?: string, prompt?: string, result?: string);
+	}
+
+	/**
+	 * One file an edit tool call changed, shown as an inline file row (path and line counts) in the
+	 * response while the agent runs.
+	 */
+	export class ChatFileEditToolInvocationData {
+		/** The file that was changed. */
+		uri: Uri;
+
+		/** Lines this call added. */
+		added: number;
+
+		/** Lines this call removed. */
+		removed: number;
+
+		/** Whether the call created, changed or deleted the file. */
+		change: 'add' | 'update' | 'delete';
+
+		constructor(uri: Uri, added: number, removed: number, change: 'add' | 'update' | 'delete');
 	}
 
 	export class ChatToolInvocationPart {
@@ -355,7 +387,7 @@ declare module 'vscode' {
 		pastTenseMessage?: string | MarkdownString;
 		isConfirmed?: boolean;
 		isComplete?: boolean;
-		toolSpecificData?: ChatTerminalToolInvocationData | ChatMcpToolInvocationData | ChatTodoToolInvocationData | ChatSimpleToolResultData | ChatToolResourcesInvocationData | ChatSubagentToolInvocationData;
+		toolSpecificData?: ChatTerminalToolInvocationData | ChatMcpToolInvocationData | ChatTodoToolInvocationData | ChatSimpleToolResultData | ChatToolResourcesInvocationData | ChatSubagentToolInvocationData | ChatFileEditToolInvocationData;
 		subAgentInvocationId?: string;
 		presentation?: 'hidden' | 'hiddenAfterComplete' | undefined;
 

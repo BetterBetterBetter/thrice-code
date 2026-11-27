@@ -37,6 +37,7 @@ import { ChatSandboxPrerequisiteConfirmationSubPart } from './chatSandboxPrerequ
 import { ChatModifiedFilesConfirmationSubPart } from './chatModifiedFilesConfirmationSubPart.js';
 import { ChatAgentFeedbackReviewConfirmationSubPart } from './chatAgentFeedbackReviewConfirmationSubPart.js';
 import { ChatTerminalToolConfirmationSubPart } from './chatTerminalToolConfirmationSubPart.js';
+import { ChatThriceFileEditSubPart } from './chatThriceFileEditSubPart.js';
 import { ChatTerminalToolProgressPart } from './chatTerminalToolProgressPart.js';
 import { ChatToolAuthenticationSubPart } from './chatToolAuthenticationSubPart.js';
 import { ToolConfirmationSubPart } from './chatToolConfirmationSubPart.js';
@@ -445,6 +446,10 @@ export class ChatToolInvocationPart extends Disposable implements IChatContentPa
 
 		if (this.toolInvocation.toolSpecificData?.kind === 'automationConfigured') {
 			return this.instantiationService.createInstance(ChatAutomationConfiguredResultSubPart, this.toolInvocation, this.toolInvocation.toolSpecificData, this.context, this.renderer);
+		}
+
+		if (this.toolInvocation.toolSpecificData?.kind === 'thriceFileEdit') {
+			return this.instantiationService.createInstance(ChatThriceFileEditSubPart, this.toolInvocation, this.toolInvocation.toolSpecificData, this.context);
 		}
 
 		if (this.toolInvocation.toolSpecificData?.kind === 'terminal') {

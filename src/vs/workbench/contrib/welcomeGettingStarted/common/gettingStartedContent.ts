@@ -189,6 +189,17 @@ export const startEntries: GettingStartedStartEntryContent = [
 		}
 	},
 	{
+		id: 'topLevelSSHConnect',
+		title: localize('gettingStarted.topLevelSSHConnect.title', "Connect via SSH..."),
+		description: localize('gettingStarted.topLevelSSHConnect.description', "Open a folder on a remote machine over SSH"),
+		when: '!isWeb',
+		icon: Codicon.remote,
+		content: {
+			type: 'startEntry',
+			command: 'command:openremotessh.openEmptyWindowInCurrentWindow',
+		}
+	},
+	{
 		id: 'topLevelRemoteOpen',
 		title: localize('gettingStarted.topLevelRemoteOpen.title', "Connect to..."),
 		description: localize('gettingStarted.topLevelRemoteOpen.description', "Connect to remote development workspaces."),

@@ -6,16 +6,19 @@
 import { disposableTimeout } from '../../../../base/common/async.js';
 import { Disposable, DisposableMap, DisposableStore } from '../../../../base/common/lifecycle.js';
 import { autorun } from '../../../../base/common/observable.js';
+import { isEqual } from '../../../../base/common/resources.js';
 import { URI } from '../../../../base/common/uri.js';
 import { CommandsRegistry } from '../../../../platform/commands/common/commands.js';
 import { ServicesAccessor } from '../../../../platform/instantiation/common/instantiation.js';
 import { ILogService } from '../../../../platform/log/common/log.js';
+import { ACTIVE_GROUP, IEditorService, SIDE_GROUP } from '../../../services/editor/common/editorService.js';
 import { IWorkbenchContribution } from '../../../common/contributions.js';
 import { IChatService } from '../common/chatService/chatService.js';
 import { localChatSessionType } from '../common/chatSessionsService.js';
 import { IChatModel, IChatRequestModel } from '../common/model/chatModel.js';
 import { getChatSessionType } from '../common/model/chatUri.js';
-import { isThriceProvidersParticipant, parseThriceTurnEditsArgs, THRICE_RECORD_TURN_EDITS_COMMAND_ID } from '../common/thriceTurnEdits.js';
+import { isThriceProvidersParticipant, parseThriceOpenTurnFileDiffArgs, parseThriceTurnEditsArgs, THRICE_OPEN_TURN_FILE_DIFF_COMMAND_ID, THRICE_RECORD_TURN_EDITS_COMMAND_ID } from '../common/thriceTurnEdits.js';
+import { openChatFileChangeDiff } from './widget/chatContentParts/chatChangesSummaryPart.js';
 import { ChatEditingSession } from './chatEditing/chatEditingSession.js';
 
 function isThriceRequest(request: IChatRequestModel): boolean {
@@ -91,13 +94,33 @@ CommandsRegistry.registerCommand(THRICE_RECORD_TURN_EDITS_COMMAND_ID, async (acc
 		return false;
 	}
 
-	if (parsed.edits.length === 0) {
-		session.endExternalTurn(turn.request.id);
-		return true;
+	// With no edits this only ends the turn (unless `partial`), after reconciling files
+	// recorded mid-turn.
+	const recorded = await session.recordExternalTurnEdits(response, parsed.edits, { partial: parsed.partial });
+	return recorded.length === parsed.edits.length;
+});
+
+CommandsRegistry.registerCommand(THRICE_OPEN_TURN_FILE_DIFF_COMMAND_ID, async (accessor: ServicesAccessor, arg: unknown): Promise<boolean> => {
+	const chatService = accessor.get(IChatService);
+	const editorService = accessor.get(IEditorService);
+	const logService = accessor.get(ILogService);
+
+	const parsed = parseThriceOpenTurnFileDiffArgs(arg);
+	if (!parsed) {
+		logService.warn(`${THRICE_OPEN_TURN_FILE_DIFF_COMMAND_ID}: malformed argument`);
+		return false;
 	}
 
-	const recorded = await session.recordExternalTurnEdits(response, parsed.edits);
-	return recorded.length === parsed.edits.length;
+	const turn = resolveThriceTurn(chatService.chatModels.get(), parsed.sessionResource, parsed.requestId);
+	const diff = turn?.model.editingSession?.getDiffsForFilesInRequest(turn.request.id).get()
+		.find(candidate => isEqual(candidate.modifiedURI, parsed.uri) || isEqual(candidate.originalURI, parsed.uri));
+	if (diff) {
+		openChatFileChangeDiff(editorService, diff, undefined, parsed.sideBySide);
+		return true;
+	}
+	// Not recorded (yet): the row was clicked before its partial recording landed, or recording failed.
+	await editorService.openEditor({ resource: parsed.uri }, parsed.sideBySide ? SIDE_GROUP : ACTIVE_GROUP);
+	return false;
 });
 
 /** How long entries stay in external edit mode after a Thrice turn completes, if its edits are never recorded. */
@@ -107,7 +130,8 @@ const EXTERNAL_TURN_GRACE_MS = 15_000;
  * While the Thrice participant answers a request, marks the session's existing
  * entries as externally edited so that the agent's writes to disk (which reload
  * open models) count as agent edits rather than user edits. Recording the turn
- * through {@link THRICE_RECORD_TURN_EDITS_COMMAND_ID} ends the mode; otherwise
+ * through {@link THRICE_RECORD_TURN_EDITS_COMMAND_ID} ends the mode (partial,
+ * mid-turn recordings keep it and add the entries they create to it); otherwise
  * it ends shortly after the response completes.
  */
 export class ThriceTurnEditsContribution extends Disposable implements IWorkbenchContribution {

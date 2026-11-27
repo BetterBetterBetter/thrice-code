@@ -30,7 +30,32 @@ export interface IUpdateURLOptions {
 	readonly internalOrg?: string;
 }
 
+const githubReleasesUpdateUrlPattern = /^https:\/\/github\.com\/([^/?#]+)\/([^/?#]+)\/releases\/?$/i;
+
+/**
+ * True when updates are served by a public GitHub releases page.
+ * Each release carries one JSON asset per platform (`darwin-arm64.json`,
+ * `win32-x64.json`, `linux-x64.json`, …). The running app reads
+ * `releases/latest/download/<asset>` and treats `version` as the commit.
+ */
+export function isGitHubReleasesUpdateUrl(updateUrl: string | undefined): boolean {
+	return !!updateUrl && githubReleasesUpdateUrlPattern.test(updateUrl);
+}
+
+/** True when the feed describes the commit that is already running. */
+export function isUpdateForCommit(update: { version?: string } | null | undefined, commit: string | undefined): boolean {
+	return !!commit && !!update?.version && update.version === commit;
+}
+
 export function createUpdateURL(baseUpdateUrl: string, platform: string, quality: string, commit: string, options?: IUpdateURLOptions): string {
+	const githubRelease = githubReleasesUpdateUrlPattern.exec(baseUpdateUrl);
+	if (githubRelease) {
+		const owner = githubRelease[1];
+		const repo = githubRelease[2];
+		const asset = quality === 'stable' ? `${platform}.json` : `${quality}-${platform}.json`;
+		return `https://github.com/${owner}/${repo}/releases/latest/download/${asset}`;
+	}
+
 	const url = new URL(`${baseUpdateUrl}/api/update/${platform}/${quality}/${commit}`);
 
 	if (options?.background) {

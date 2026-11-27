@@ -415,6 +415,7 @@ export class MainThreadChatAgents2 extends Disposable implements MainThreadChatA
 			setYieldRequested: (requestId, value) => {
 				this._proxy.$setYieldRequested(requestId, value);
 			},
+			steer: (requestId, message) => this._proxy.$steer(requestId, message),
 			provideFollowups: async (request, result, history, token): Promise<IChatFollowup[]> => {
 				if (!this._agents.get(handle)?.hasFollowups) {
 					return [];
@@ -700,6 +701,10 @@ export class MainThreadChatAgents2 extends Disposable implements MainThreadChatA
 	$unregisterAgentCompletionsProvider(handle: number, id: string): void {
 		this._agentCompletionProviders.deleteAndDispose(handle);
 		this._agentIdsToCompletionProviders.deleteAndDispose(id);
+	}
+
+	$setSteerable(requestId: string, steerable: boolean): void {
+		this._chatAgentService.setSteerable(requestId, steerable);
 	}
 
 	$registerChatParticipantDetectionProvider(handle: number): void {

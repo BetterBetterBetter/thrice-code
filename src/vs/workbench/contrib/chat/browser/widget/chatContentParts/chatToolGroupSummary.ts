@@ -8,7 +8,7 @@ import { basename, IExtUri } from '../../../../../../base/common/resources.js';
 import { URI } from '../../../../../../base/common/uri.js';
 import { localize } from '../../../../../../nls.js';
 import { IChatToolInvocation, IChatToolInvocationSerialized, ToolConfirmKind } from '../../../common/chatService/chatService.js';
-import { getToolInvocationSummary } from '../../../common/tools/toolInvocationSummary.js';
+import { getToolInvocationSummary, isThriceExternalTool } from '../../../common/tools/toolInvocationSummary.js';
 import { isToolResultInputOutputDetails } from '../../../common/tools/languageModelToolsService.js';
 
 /** Summarizes visible tool activity and outcomes without interpreting model-authored messages. */
@@ -138,6 +138,8 @@ export function getToolGroupSummary(
 		}
 	}
 	const labels: { text: string; steps: number; overflowDetail?: string }[] = [];
+	// Thrice provider steps read like Cursor's trace: reads, searches and listings are one "Explored" label.
+	const explored = tools.length > 0 && tools.every(tool => isThriceExternalTool(tool)) ? exploredLabel(reads.size, phrases.size + patterns.size, directories.size) : undefined;
 	const addLabel = (initial: string, continuation: string, steps: number) => labels.push({ text: labels.length === 0 ? initial : continuation, steps });
 	if (edits.size === 1) {
 		const file = basename([...edits][0]);
@@ -150,23 +152,25 @@ export function getToolGroupSummary(
 			commands === 1 ? localize('toolSummary.ranCommand', "Ran 1 command") : localize('toolSummary.ranCommands', "Ran {0} commands", commands),
 			commands === 1 ? localize('toolSummary.ranCommand.continued', "ran 1 command") : localize('toolSummary.ranCommands.continued', "ran {0} commands", commands), commands);
 	}
-	if (reads.size === 1) {
+	if (explored) {
+		labels.push({ text: labels.length === 0 ? explored : explored.charAt(0).toLowerCase() + explored.slice(1), steps: readSteps + textSearchSteps + fileSearchSteps + directorySteps });
+	} else if (reads.size === 1) {
 		const file = basename([...reads][0]);
 		addLabel(localize('toolSummary.readFile', "Read {0}", file), localize('toolSummary.readFile.continued', "read {0}", file), readSteps);
 	} else if (reads.size > 1) {
 		addLabel(localize('toolSummary.readFiles', "Read {0} files", reads.size), localize('toolSummary.readFiles.continued', "read {0} files", reads.size), readSteps);
 	}
-	if (phrases.size > 0) {
+	if (!explored && phrases.size > 0) {
 		addLabel(
 			phrases.size === 1 ? localize('toolSummary.searchedPhrase', "Searched for 1 phrase") : localize('toolSummary.searchedPhrases', "Searched for {0} phrases", phrases.size),
 			phrases.size === 1 ? localize('toolSummary.searchedPhrase.continued', "searched for 1 phrase") : localize('toolSummary.searchedPhrases.continued', "searched for {0} phrases", phrases.size), textSearchSteps);
 	}
-	if (patterns.size > 0) {
+	if (!explored && patterns.size > 0) {
 		addLabel(
 			patterns.size === 1 ? localize('toolSummary.searchedPattern', "Searched for 1 file pattern") : localize('toolSummary.searchedPatterns', "Searched for {0} file patterns", patterns.size),
 			patterns.size === 1 ? localize('toolSummary.searchedPattern.continued', "searched for 1 file pattern") : localize('toolSummary.searchedPatterns.continued', "searched for {0} file patterns", patterns.size), fileSearchSteps);
 	}
-	if (directories.size > 0) {
+	if (!explored && directories.size > 0) {
 		addLabel(
 			directories.size === 1 ? localize('toolSummary.listedDirectory', "Listed 1 directory") : localize('toolSummary.listedDirectories', "Listed {0} directories", directories.size),
 			directories.size === 1 ? localize('toolSummary.listedDirectory.continued', "listed 1 directory") : localize('toolSummary.listedDirectories.continued', "listed {0} directories", directories.size), directorySteps);
@@ -221,6 +225,22 @@ export function getToolGroupSummary(
 		visibleLabels.push(outcomes ? localize('toolSummary.otherStepsWithOutcomes', "{0} ({1})", otherLabel, outcomes) : otherLabel);
 	}
 	return combineLabels(visibleLabels);
+}
+
+/** "Explored 4 files, 2 searches", "Explored 1 directory": undefined when nothing was explored. */
+export function exploredLabel(files: number, searches: number, directories: number): string | undefined {
+	const parts: string[] = [];
+	if (files > 0) {
+		parts.push(files === 1 ? localize('toolSummary.explored.file', "1 file") : localize('toolSummary.explored.files', "{0} files", files));
+	}
+	if (searches > 0) {
+		parts.push(searches === 1 ? localize('toolSummary.explored.search', "1 search") : localize('toolSummary.explored.searches', "{0} searches", searches));
+	}
+	if (directories > 0) {
+		parts.push(directories === 1 ? localize('toolSummary.explored.directory', "1 directory") : localize('toolSummary.explored.directories', "{0} directories", directories));
+	}
+	const list = combineLabels(parts);
+	return list ? localize('toolSummary.explored', "Explored {0}", list) : undefined;
 }
 
 function combineLabels(labels: readonly string[]): string | undefined {

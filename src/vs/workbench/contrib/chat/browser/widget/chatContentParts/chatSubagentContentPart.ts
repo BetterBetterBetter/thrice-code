@@ -31,6 +31,7 @@ import { IChatContentPart, IChatContentPartDiffData, IChatContentPartDiffSource,
 import { aggregateChatEditDiffs } from './chatEditStatsButton.js';
 import { CollapsibleListPool } from './chatReferencesContentPart.js';
 import { buildPhrasePool } from './chatThinkingContentPart.js';
+import { providerIdDisplayName } from '../../../common/thriceProviderLogos.js';
 import { ChatThinkingStyleContentPart, createThinkingIcon } from './chatThinkingStyleContentPart.js';
 import { ChatToolInvocationPart } from './toolInvocationParts/chatToolInvocationPart.js';
 import { getToolInvocationIcon } from './toolInvocationParts/chatToolPartUtilities.js';
@@ -304,6 +305,7 @@ export class ChatSubagentContentPart extends ChatThinkingStyleContentPart implem
 				isActive: this.isActive,
 				isError: (data?.kind === 'subagent' ? data.isError : undefined) ?? !!IChatToolInvocation.resultError(this._subagentToolInvocation),
 				...(this.credits ? { credits: this.credits } : {}),
+				...(data?.kind === 'subagent' && data.chatProvider ? { chatProvider: data.chatProvider } : {}),
 				...(data?.kind === 'subagent' && data.modelId ? { modelId: data.modelId } : {}),
 				...(this.modelName ? { modelName: this.modelName } : {}),
 				...(data?.kind === 'subagent' && data.modelConfiguration ? { modelConfiguration: data.modelConfiguration } : {}),
@@ -349,7 +351,9 @@ export class ChatSubagentContentPart extends ChatThinkingStyleContentPart implem
 		if (GENERIC_SUBAGENT_TYPES.has(normalizedAgentName) || normalizedAgentName === this._subagentToolInvocation.toolId.toLowerCase()) {
 			return undefined;
 		}
-		return this.agentDisplayName?.trim() || agentName;
+		// A Thrice provider id such as `codex-hub` reads as its brand, which the pill's logo shows too.
+		const providerName = this._subagentToolInvocation.toolSpecificData?.kind === 'subagent' ? providerIdDisplayName(this._subagentToolInvocation.toolSpecificData.chatProvider) : undefined;
+		return this.agentDisplayName?.trim() || providerName || agentName;
 	}
 
 	constructor(

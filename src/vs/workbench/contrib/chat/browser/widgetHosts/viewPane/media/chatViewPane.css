@@ -307,11 +307,20 @@
 }
 
 .chat-viewpane.has-auxiliary-chat-editors > .auxiliary-bar-chat-editors.chat-history-at-end .chat-history-toggle {
-	inset-inline-end: 2px;
+	inset-inline-end: 0;
 }
 
 .chat-viewpane.has-auxiliary-chat-editors > .auxiliary-bar-chat-editors.chat-history-at-start .chat-history-toggle {
-	inset-inline-start: 2px;
+	inset-inline-start: 0;
+}
+
+/* Open: the close button above New Agent takes over, so the tab-row button and its slot go away. */
+.chat-viewpane.has-auxiliary-chat-editors > .auxiliary-bar-chat-editors.chat-history-open .chat-history-toggle {
+	display: none;
+}
+
+.chat-viewpane.has-auxiliary-chat-editors > .auxiliary-bar-chat-editors.chat-history-open .editor-group-container > .title {
+	padding-inline: 0;
 }
 
 .chat-viewpane.has-auxiliary-chat-editors .chat-history-toggle .action-label:focus-visible {
@@ -352,6 +361,41 @@
 	align-items: stretch;
 	gap: var(--vscode-spacing-size40);
 	padding: var(--vscode-spacing-size80) var(--vscode-spacing-size80) 0;
+}
+
+.chat-viewpane.has-auxiliary-chat-editors .chat-session-history-header {
+	display: flex;
+	align-items: center;
+	justify-content: flex-end;
+	height: 35px;
+	margin-top: calc(-1 * var(--vscode-spacing-size80));
+}
+
+.chat-viewpane.has-auxiliary-chat-editors > .auxiliary-bar-chat-editors.chat-history-at-start .chat-session-history-header {
+	justify-content: flex-start;
+}
+
+.chat-viewpane.has-auxiliary-chat-editors .chat-session-history-close {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 22px;
+	height: 22px;
+	padding: 0;
+	border: 0;
+	border-radius: var(--vscode-cornerRadius-medium);
+	background: transparent;
+	color: inherit;
+	cursor: pointer;
+}
+
+.chat-viewpane.has-auxiliary-chat-editors .chat-session-history-close:hover {
+	background-color: var(--vscode-toolbar-hoverBackground);
+}
+
+.chat-viewpane.has-auxiliary-chat-editors .chat-session-history-close:focus-visible {
+	outline: 1px solid var(--vscode-focusBorder);
+	outline-offset: -1px;
 }
 
 .chat-viewpane.has-auxiliary-chat-editors .chat-session-history-command {
@@ -585,7 +629,10 @@
 	content: '';
 	position: absolute;
 	z-index: 2;
-	inset-inline-start: 8px;
+	/* The base label gives ::after a 5px start margin for decorations, which pushed the dot off the icon. */
+	margin: 0;
+	/* Bottom-right corner of the 13px tab icon, overhanging it by 2px like the dot in the sessions list. */
+	inset-inline-start: 9px;
 	top: calc(50% + 1px);
 }
 

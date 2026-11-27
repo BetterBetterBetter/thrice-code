@@ -1,3 +1,5 @@
+import { agentToolNote, agentTools } from './agents';
+
 export const EDITOR_TOOL_INSTRUCTION = 'This chat runs inside the editor. Prefer the editor\'s built-in tools over external applications. A terminal, shell, or session means the editor\'s integrated terminal: use spawnTerminal, which opens the terminal panel, then readTerminal or waitTerminal. Call openEditor to show a file in this window. Call sessionContext for this window\'s folders, unsaved editors, problems, and ports. Do not launch Terminal.app, iTerm, or any other external application unless the user names that application.';
 
 export const TERMINAL_TOOL_NAME = 'agentWindowShell';
@@ -31,9 +33,10 @@ export const SESSION_TOOLS = [
 		lines: numberProp('Trailing lines to return. Defaults to 200.'),
 	}, ['id']),
 	tool('openEditor', 'Open a file or untitled editor as a visible tab in this window.', { path: stringProp('File path or untitled URI.') }, ['path']),
-	tool('spawnTerminal', 'Open the terminal panel in this window, start a real integrated terminal, and return its id immediately. Use this for a terminal, shell, or interactive program such as claude. Pass command to type it and run it. Then call readTerminal or waitTerminal. Do not use Bash, Terminal.app, or iTerm.', {
+	tool('spawnTerminal', 'Open the terminal panel in this window, start a real integrated terminal, and return its id immediately. Use this for a terminal, shell, or interactive program such as claude. Pass command to type it and run it. Then call readTerminal or waitTerminal. Do not use Bash, Terminal.app, or iTerm. A terminal you open for your own work shows an agent icon: close it with closeTerminal when you are done, and it is closed for you when your turn ends.', {
 		command: stringProp('Command to type into the terminal. Omit to open a shell.'),
 		working_directory: stringProp('Absolute working directory. Omit to use the window default.'),
+		for_user: { type: 'boolean', description: 'True only when the user asked for this terminal or session to be opened. It then looks like any terminal and stays open after your turn.' },
 	}),
 	tool('writeTerminal', 'Type into an integrated terminal by id. text is sent, then Enter, unless submit is false.', {
 		id: numberProp('Terminal id.'),
@@ -69,6 +72,7 @@ export const TERMINAL_TOOL = tool(
 		command: stringProp('The shell command to run.'),
 		working_directory: stringProp('Absolute working directory. Omit to use the workspace folder.'),
 		keep_open: { type: 'boolean', description: 'True opens a real terminal with spawnTerminal and returns immediately.' },
+		for_user: { type: 'boolean', description: 'With keep_open, true only when the user asked for this terminal. Otherwise it is closed when your turn ends.' },
 	},
 	['command'],
 );
@@ -95,6 +99,12 @@ export function externalTerminalDenial(command: string, userText: string, toolNa
 		return `Use ${toolName} to open the editor's integrated terminal, then readTerminal or waitTerminal. Launch ${launch.app} only when the user names that application.`;
 	}
 	return undefined;
+}
+
+/** The terminal id in a spawnTerminal result, which the bridge tracks so it can close the terminal later. */
+export function spawnedTerminalId(result: string): number | undefined {
+	const match = /^Opened the terminal panel on terminal (\d+)\b/.exec(result);
+	return match ? Number(match[1]) : undefined;
 }
 
 /** Interactive CLIs exit when Bash starts them in a pipe. They belong in spawnTerminal. */
@@ -132,13 +142,62 @@ export function ensureEditorToolInstruction(text: string): string {
 	return `${EDITOR_TOOL_INSTRUCTION}\n\n${text}`;
 }
 
-export function claudeToolNote(): string {
-	return `${EDITOR_TOOL_INSTRUCTION} The session tools are already on the thrice MCP server. Call ${CLAUDE_TERMINAL_TOOL} for a terminal. Call mcp__thrice__sessionContext to see this window.`;
+/** Terminals an agent opens for itself are closed when its turn ends; this tells it to close them first. */
+export const TERMINAL_CLOSE_RULE = 'Close every terminal you opened for your own work with closeTerminal as soon as you are done with it. Set for_user only when the user asked for that terminal; it then stays open.';
+
+export function claudeToolNote(agents = false): string {
+	const base = `${EDITOR_TOOL_INSTRUCTION} The session tools are already on the thrice MCP server. Call ${CLAUDE_TERMINAL_TOOL} for a terminal. Call mcp__thrice__sessionContext to see this window. ${TERMINAL_CLOSE_RULE}`;
+	return agents ? `${base} ${agentToolNote('mcp__thrice__')}` : base;
 }
 
-export function codexToolNote(): string {
-	return `${EDITOR_TOOL_INSTRUCTION} Use the thrice MCP tool ${SPAWN_TOOL_NAME} for a terminal and sessionContext to see this window.`;
+export function codexToolNote(agents = false): string {
+	const base = `${EDITOR_TOOL_INSTRUCTION} Use the thrice MCP tool ${SPAWN_TOOL_NAME} for a terminal and sessionContext to see this window. ${TERMINAL_CLOSE_RULE}`;
+	return agents ? `${base} ${agentToolNote('the thrice MCP tool ')}` : base;
 }
+
+/**
+ * Thrice tools that only read the window, plus the agent tools (a read-only launch only starts
+ * read-only agents). Claude asks before any other MCP tool, and a print-mode run cannot ask, so a
+ * launch without --dangerously-skip-permissions is allowed these and nothing else.
+ */
+export const READ_ONLY_THRICE_TOOLS = ['sessionContext', 'listEditors', 'readEditor', 'listTerminals', 'readTerminal', 'listPorts', 'listProblems', 'listAgents', 'runAgent', 'waitAgent', 'stopAgent'] as const;
+
+export function opencodeToolNote(agents = false): string {
+	const base = `${EDITOR_TOOL_INSTRUCTION} Use the thrice MCP tool thrice_${SPAWN_TOOL_NAME} for a terminal and thrice_sessionContext to see this window. ${TERMINAL_CLOSE_RULE}`;
+	return agents ? `${base} ${agentToolNote('thrice_')}` : base;
+}
+
+/**
+ * Environment that gives a launch the thrice MCP server when its CLI takes configuration that
+ * way. OpenCode reads OPENCODE_CONFIG_CONTENT on top of the user's own config.
+ */
+export function editorToolEnvironment(driver: string, launch: EditorToolLaunch | undefined, base: Readonly<Record<string, string | undefined>> = {}): Record<string, string> {
+	if (!launch || driver !== 'opencode') {
+		return {};
+	}
+	let config: Record<string, unknown> = {};
+	const existing = base.OPENCODE_CONFIG_CONTENT;
+	if (existing) {
+		try {
+			const parsed = JSON.parse(existing) as unknown;
+			if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+				config = parsed as Record<string, unknown>;
+			}
+		} catch {
+			config = {};
+		}
+	}
+	const mcp = config.mcp && typeof config.mcp === 'object' ? config.mcp as Record<string, unknown> : {};
+	return {
+		OPENCODE_CONFIG_CONTENT: JSON.stringify({
+			...config,
+			mcp: { ...mcp, thrice: { type: 'local', command: ['node', launch.shimPath, String(launch.port), launch.token], enabled: true } },
+		}),
+	};
+}
+
+/** Codex gives an MCP tool 60 seconds by default; runAgent and waitAgent can wait far longer. */
+export const CODEX_TOOL_TIMEOUT_SEC = 3600;
 
 export interface EditorToolLaunch {
 	readonly mcpConfigFile: string;
@@ -146,21 +205,35 @@ export interface EditorToolLaunch {
 	readonly shimPath: string;
 	readonly port: number;
 	readonly token: string;
+	/** True when this launch may start other agents through runAgent. */
+	readonly agentTools?: boolean;
 	dispose(): void;
+}
+
+export interface McpToolOptions {
+	/** Offer the agent tools at all. */
+	readonly agents?: boolean;
+	/** Offer runAgent, waitAgent and stopAgent as well as listAgents. */
+	readonly canSpawn?: boolean;
 }
 
 export type McpAction =
 	| { readonly kind: 'none' }
+	| { readonly kind: 'cancel'; readonly requestId: unknown }
 	| { readonly kind: 'reply'; readonly message: unknown }
 	| { readonly kind: 'tool'; readonly id: unknown; readonly name: string; readonly args: Record<string, unknown> };
 
-export function interpretMcp(message: unknown): McpAction {
+export function interpretMcp(message: unknown, options: McpToolOptions = {}): McpAction {
 	if (!message || typeof message !== 'object') {
 		return { kind: 'none' };
 	}
 	const record = message as { id?: unknown; method?: unknown; params?: unknown };
 	if (typeof record.method !== 'string') {
 		return { kind: 'none' };
+	}
+	if (record.method === 'notifications/cancelled') {
+		const params = record.params as { requestId?: unknown } | undefined;
+		return params && params.requestId !== undefined ? { kind: 'cancel', requestId: params.requestId } : { kind: 'none' };
 	}
 	if (record.method.startsWith('notifications/')) {
 		return { kind: 'none' };
@@ -186,7 +259,7 @@ export function interpretMcp(message: unknown): McpAction {
 		};
 	}
 	if (record.method === 'tools/list') {
-		return { kind: 'reply', message: { jsonrpc: '2.0', id, result: { tools: [...SESSION_TOOLS, TERMINAL_TOOL] } } };
+		return { kind: 'reply', message: { jsonrpc: '2.0', id, result: { tools: [...SESSION_TOOLS, TERMINAL_TOOL, ...(options.agents ? agentTools(options.canSpawn === true) : [])] } } };
 	}
 	if (record.method === 'ping') {
 		return { kind: 'reply', message: { jsonrpc: '2.0', id, result: {} } };
@@ -211,8 +284,9 @@ export function mcpStdioFrame(message: unknown): string {
 
 export function withEditorTools(driver: string, args: readonly string[], launch: EditorToolLaunch | undefined, extraDirectories: readonly string[] = []): string[] {
 	const next = [...args];
-	const note = !launch ? undefined : driver === 'claude' ? claudeToolNote() : driver === 'codex' ? codexToolNote() : undefined;
-	if (note && next.length > 0 && !next[next.length - 1].includes(CLAUDE_TERMINAL_TOOL) && !next[next.length - 1].includes(`MCP tool ${SPAWN_TOOL_NAME}`)) {
+	const agents = launch?.agentTools === true;
+	const note = !launch ? undefined : driver === 'claude' ? claudeToolNote(agents) : driver === 'codex' ? codexToolNote(agents) : driver === 'opencode' ? opencodeToolNote(agents) : undefined;
+	if (note && next.length > 0 && !next[next.length - 1].includes(CLAUDE_TERMINAL_TOOL) && !next[next.length - 1].includes(`MCP tool ${SPAWN_TOOL_NAME}`) && !next[next.length - 1].includes(`MCP tool thrice_${SPAWN_TOOL_NAME}`)) {
 		next[next.length - 1] = `${next[next.length - 1]}\n\n${note}`;
 	}
 	if (!launch) {
@@ -230,8 +304,11 @@ export function withEditorTools(driver: string, args: readonly string[], launch:
 		flags.push(
 			'--mcp-config', launch.mcpConfigFile,
 			'--settings', launch.settingsFile,
-			'--append-system-prompt', claudeToolNote(),
+			'--append-system-prompt', claudeToolNote(agents),
 		);
+		if (!next.includes('--dangerously-skip-permissions')) {
+			flags.push('--allowedTools', READ_ONLY_THRICE_TOOLS.map(name => `mcp__thrice__${name}`).join(','));
+		}
 		next.splice(index, 0, ...flags);
 		return next;
 	}
@@ -243,6 +320,7 @@ export function withEditorTools(driver: string, args: readonly string[], launch:
 			'-c', 'mcp_servers.thrice.command="node"',
 			'-c', `mcp_servers.thrice.args=${mcpArgs}`,
 			'-c', 'mcp_servers.thrice.enabled=true',
+			'-c', `mcp_servers.thrice.tool_timeout_sec=${CODEX_TOOL_TIMEOUT_SEC}`,
 		);
 	}
 	return next;
