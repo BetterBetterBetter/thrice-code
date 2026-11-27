@@ -1,0 +1,9 @@
+{
+	"scopeName": "source.proto",
+	"patterns": [
+		{
+			"match": "\\b(syntax|package|import|option|message|enum|service|rpc|returns|repeated|optional|required|oneof|map|reserved|extend)\\b",
+			"name": "keyword.other.proto"
+		}
+	]
+}

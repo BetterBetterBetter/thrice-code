@@ -1,0 +1,28 @@
+/*---------------------------------------------------------------------------------------------
+ *  Copyright (c) Microsoft Corporation. All rights reserved.
+ *  Licensed under the MIT License. See License.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
+import { localize2 } from '../../../../nls.js';
+import { MenuId } from '../../../../platform/actions/common/actions.js';
+
+/**
+ * View ID for the unified AI Customization tree view.
+ */
+export const AI_CUSTOMIZATION_VIEW_ID = 'aiCustomization.view';
+
+/**
+ * Category for AI Customization commands.
+ */
+export const AI_CUSTOMIZATION_CATEGORY = localize2('aiCustomization', "Chat Customization");
+
+//#region Menu IDs
+
+// Context menu for file items (right-click on items)
+export const AICustomizationItemMenuId = new MenuId('aiCustomization.item');
+//#endregion
+
+/**
+ * Command ID for the Focus Chat Customizations action.
+ */
+export const FOCUS_AI_CUSTOMIZATION_VIEW_ID = 'aiCustomization.focusView';

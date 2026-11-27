@@ -1,0 +1,69 @@
+{
+	"name": "thrice-agent-host",
+	"displayName": "Thrice Agent Host",
+	"description": "Agent host settings. Store format, the auto route, and per-chat migration failure are unconfirmed, so nothing is written.",
+	"version": "10.0.0",
+	"publisher": "thrice",
+	"license": "MIT",
+	"engines": {
+		"vscode": "*"
+	},
+	"activationEvents": [
+		"*"
+	],
+	"main": "./out/extension",
+	"scripts": {
+		"compile": "gulp compile-extension:thrice-agent-host",
+		"watch": "gulp watch-extension:thrice-agent-host"
+	},
+	"capabilities": {
+		"virtualWorkspaces": true,
+		"untrustedWorkspaces": {
+			"supported": true
+		}
+	},
+	"contributes": {
+		"commands": [
+			{
+				"command": "thrice.agentHost.developer.compareStoresOnce",
+				"title": "Compare Agent Host stores (once)",
+				"category": "Developer"
+			},
+			{
+				"command": "thrice.agentHost.developer.migrateLegacyChats",
+				"title": "Migrate legacy chats to Agent Host storage",
+				"category": "Developer"
+			}
+		],
+		"configuration": {
+			"title": "Thrice Agent Host",
+			"properties": {
+				"thrice.agentHost.experimentalHostOwnedSessionStorage": {
+					"type": "boolean",
+					"default": false,
+					"scope": "application",
+					"description": "Read at host start. When true, new chats are owned by the host. Existing chats stay where they are. CURSOR_AGENT_HOST_OWNED_SESSION_STORAGE of 1 or true also turns this on. The database path is unconfirmed."
+				},
+				"thrice.agentHost.experimentalLegacyMigration": {
+					"type": "string",
+					"enum": ["off", "dry-run", "migrate"],
+					"enumDescriptions": [
+						"Does not run on activation. The developer command still runs it on request and writes nothing.",
+						"Plans the migration and writes nothing.",
+						"Dry-runs, then writes nothing because the migration tool is unconfirmed."
+					],
+					"default": "off",
+					"scope": "application",
+					"description": "Needs host-owned session storage. CURSOR_AGENT_HOST_LEGACY_MIGRATION of dry-run or migrate overrides this. Per-chat failure is unconfirmed."
+				},
+				"thrice.agentHost.remoteInferenceRoute": {
+					"type": "string",
+					"enum": ["auto", "always", "never"],
+					"default": "auto",
+					"scope": "machine-overridable",
+					"description": "auto does not select a network in this extension because that choice is unconfirmed. always and never keep the setting value. Read at host start."
+				}
+			}
+		}
+	}
+}

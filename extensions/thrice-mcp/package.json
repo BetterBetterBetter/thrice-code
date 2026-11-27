@@ -1,0 +1,19 @@
+{
+	"name": "thrice-mcp",
+	"displayName": "Thrice MCP",
+	"description": "MCP activation and URI entry. Server list, transport, tool arguments, and redirect URLs are unconfirmed.",
+	"version": "10.0.0",
+	"publisher": "thrice",
+	"license": "MIT",
+	"engines": { "vscode": "*" },
+	"activationEvents": ["onStartupFinished", "onUri"],
+	"main": "./out/extension",
+	"scripts": {
+		"compile": "gulp compile-extension:thrice-mcp",
+		"watch": "gulp watch-extension:thrice-mcp"
+	},
+	"capabilities": {
+		"virtualWorkspaces": true,
+		"untrustedWorkspaces": { "supported": true }
+	}
+}

@@ -1,0 +1,25 @@
+{
+	"name": "thrice-browser-automation",
+	"displayName": "Thrice Browser Automation",
+	"description": "Holds the confirmed browser error strings. Tool arguments and CDP methods are unconfirmed.",
+	"version": "10.0.0",
+	"publisher": "thrice",
+	"license": "MIT",
+	"engines": {
+		"vscode": "*"
+	},
+	"activationEvents": [
+		"onStartupFinished"
+	],
+	"main": "./out/extension",
+	"scripts": {
+		"compile": "gulp compile-extension:thrice-browser-automation",
+		"watch": "gulp watch-extension:thrice-browser-automation"
+	},
+	"capabilities": {
+		"virtualWorkspaces": true,
+		"untrustedWorkspaces": {
+			"supported": true
+		}
+	}
+}

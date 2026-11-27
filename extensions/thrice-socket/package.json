@@ -1,0 +1,26 @@
+{
+	"name": "thrice-socket",
+	"displayName": "Thrice Socket",
+	"description": "In-memory tcp and tls leases. Byte framing and the shutdown delay are unconfirmed, so it does not open a port.",
+	"version": "10.0.0",
+	"publisher": "thrice",
+	"license": "MIT",
+	"engines": {
+		"vscode": "*"
+	},
+	"activationEvents": [
+		"onResolveRemoteAuthority:background-composer",
+		"onStartupFinished"
+	],
+	"main": "./out/extension",
+	"scripts": {
+		"compile": "gulp compile-extension:thrice-socket",
+		"watch": "gulp watch-extension:thrice-socket"
+	},
+	"capabilities": {
+		"virtualWorkspaces": true,
+		"untrustedWorkspaces": {
+			"supported": true
+		}
+	}
+}

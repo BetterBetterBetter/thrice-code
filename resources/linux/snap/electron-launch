@@ -1,0 +1,310 @@
+#!/usr/bin/env bash
+
+# On Fedora $SNAP is under /var and there is some magic to map it to /snap.
+# We need to handle that case and reset $SNAP
+SNAP=$(echo "$SNAP" | sed -e "s|/var/lib/snapd||g")
+
+#
+# Exports are based on https://github.com/snapcore/snapcraft/blob/master/extensions/desktop/common/desktop-exports
+#
+
+# ensure_dir_exists calls `mkdir -p` if the given path is not a directory.
+# This speeds up execution time by avoiding unnecessary calls to mkdir.
+#
+# Usage: ensure_dir_exists <path> [<mkdir-options>]...
+#
+function ensure_dir_exists() {
+  [ -d "$1" ] || mkdir -p "$@"
+}
+
+declare -A PIDS
+function async_exec() {
+  "$@" &
+  PIDS[$!]=$*
+}
+function wait_for_async_execs() {
+  for pid in "${!PIDS[@]}"
+  do
+    wait "$pid" && continue || echo "ERROR: ${PIDS[$pid]} exited abnormally with status $?"
+  done
+}
+
+function prepend_dir() {
+  local -n var="$1"
+  local dir="$2"
+  # We can't check if the dir exists when the dir contains variables
+  if [[ "$dir" == *"\$"*  || -d "$dir" ]]; then
+    export "${!var}=${dir}${var:+:$var}"
+  fi
+}
+
+function append_dir() {
+  local -n var="$1"
+  local dir="$2"
+  # We can't check if the dir exists when the dir contains variables
+  if [[ "$dir" == *"\$"*  || -d "$dir" ]]; then
+    export "${!var}=${var:+$var:}${dir}"
+  fi
+}
+
+function copy_env_variable() {
+  local key="$1"
+  local -n var="$key"
+  if [[ -v $key ]]; then
+    export "${key}_VSCODE_SNAP_ORIG=${var}"
+  else
+    export "${key}_VSCODE_SNAP_ORIG="
+  fi
+}
+
+# shellcheck source=/dev/null
+source "$SNAP_USER_DATA/.last_revision" 2>/dev/null || true
+if [ "$SNAP_DESKTOP_LAST_REVISION" = "$SNAP_VERSION" ]; then
+  needs_update=false
+else
+  needs_update=true
+fi
+
+# Set $REALHOME to the users real home directory
+REALHOME=$(getent passwd $UID | cut -d ':' -f 6)
+
+# Set config folder to local path
+ensure_dir_exists "$SNAP_USER_DATA/.config"
+chmod 700 "$SNAP_USER_DATA/.config"
+
+if [ "$SNAP_ARCH" == "amd64" ]; then
+  ARCH="x86_64-linux-gnu"
+elif [ "$SNAP_ARCH" == "armhf" ]; then
+  ARCH="arm-linux-gnueabihf"
+elif [ "$SNAP_ARCH" == "arm64" ]; then
+  ARCH="aarch64-linux-gnu"
+else
+  ARCH="$SNAP_ARCH-linux-gnu"
+fi
+
+export SNAP_LAUNCHER_ARCH_TRIPLET="$ARCH"
+
+# Preserve system variables that get modified below
+copy_env_variable XDG_CONFIG_DIRS
+copy_env_variable XDG_DATA_DIRS
+copy_env_variable LOCPATH
+copy_env_variable GIO_MODULE_DIR
+copy_env_variable GSETTINGS_SCHEMA_DIR
+copy_env_variable GDK_PIXBUF_MODULE_FILE
+copy_env_variable GDK_PIXBUF_MODULEDIR
+copy_env_variable GDK_BACKEND
+copy_env_variable XDG_SESSION_TYPE
+copy_env_variable MOZ_ENABLE_WAYLAND
+copy_env_variable LIBGL_DRIVERS_PATH
+copy_env_variable SPA_PLUGIN_DIR
+copy_env_variable PIPEWIRE_CONFIG_NAME
+copy_env_variable PIPEWIRE_MODULE_DIR
+copy_env_variable GTK_PATH
+copy_env_variable GTK_EXE_PREFIX
+copy_env_variable GTK_IM_MODULE_FILE
+unset WAYLAND_SOCKET
+
+# XDG Config
+prepend_dir XDG_CONFIG_DIRS "$SNAP/etc/xdg"
+
+# Define snaps' own data dir
+prepend_dir XDG_DATA_DIRS "$SNAP/usr/share"
+prepend_dir XDG_DATA_DIRS "$SNAP/share"
+prepend_dir XDG_DATA_DIRS "$SNAP/data-dir"
+prepend_dir XDG_DATA_DIRS "$SNAP_USER_DATA"
+
+# Set XDG_DATA_HOME to local path
+ensure_dir_exists "$SNAP_USER_DATA/.local/share"
+
+# Workaround for GLib < 2.53.2 not searching for schemas in $XDG_DATA_HOME:
+#   https://bugzilla.gnome.org/show_bug.cgi?id=741335
+prepend_dir XDG_DATA_DIRS "$SNAP_USER_DATA/.local/share"
+
+# Set cache folder to local path
+if [[ -d "$SNAP_USER_DATA/.cache" && ! -e "$SNAP_USER_COMMON/.cache" ]]; then
+  # the .cache directory used to be stored under $SNAP_USER_DATA, migrate it
+  mv "$SNAP_USER_DATA/.cache" "$SNAP_USER_COMMON/"
+fi
+ensure_dir_exists "$SNAP_USER_COMMON/.cache"
+
+# Create $XDG_RUNTIME_DIR if not exists (to be removed when LP: #1656340 is fixed)
+# shellcheck disable=SC2174
+if [[ -n "${XDG_RUNTIME_DIR:-}" && "$XDG_RUNTIME_DIR" = /* ]]; then
+  ensure_dir_exists "$XDG_RUNTIME_DIR" -m 700
+fi
+
+# Ensure the app finds locale definitions (requires locales-all to be installed)
+append_dir LOCPATH "$SNAP/usr/lib/locale"
+
+# Detect Wayland using the protocol-defined WAYLAND_SOCKET/WAYLAND_DISPLAY/XDG_RUNTIME_DIR
+# contract. Relative display names are resolved below XDG_RUNTIME_DIR; absolute names
+# are used verbatim by libwayland.
+wayland_available=false
+if [[ -z "$DISABLE_WAYLAND" ]]; then
+    if [[ -n "${WAYLAND_DISPLAY:-}" ]]; then
+        wayland_name="$WAYLAND_DISPLAY"
+    elif [[ "${XDG_SESSION_TYPE:-}" = "wayland" ]]; then
+        wayland_name="wayland-0"
+    else
+        wayland_name=""
+    fi
+
+    if [[ -n "$wayland_name" ]]; then
+        if [[ "$wayland_name" = /* ]]; then
+            wayland_socket="$wayland_name"
+            wayland_fallback=""
+        elif [[ -n "${XDG_RUNTIME_DIR:-}" && "$XDG_RUNTIME_DIR" = /* ]]; then
+            wayland_socket="$XDG_RUNTIME_DIR/$wayland_name"
+            wayland_fallback="$XDG_RUNTIME_DIR/../$wayland_name"
+        else
+            wayland_socket=""
+            wayland_fallback=""
+        fi
+
+        if [[ -n "$wayland_socket" && -S "$wayland_socket" ]]; then
+            wayland_available=true
+        elif [[ -n "${wayland_fallback:-}" && -S "$wayland_fallback" ]]; then
+            wayland_available=true
+            if [[ -n "${XDG_RUNTIME_DIR:-}" ]]; then
+                if [[ -L "$wayland_socket" || (-f "$wayland_socket" && ! -S "$wayland_socket") ]]; then
+                    rm -f "$wayland_socket"
+                fi
+                if [[ ! -e "$wayland_socket" && ! -L "$wayland_socket" && -S "$wayland_fallback" ]]; then
+                    ln -s "$wayland_fallback" "$wayland_socket"
+                fi
+            fi
+        fi
+    fi
+
+    if [ "$wayland_available" = true ]; then
+        export XDG_SESSION_TYPE="wayland"
+        if [[ -z "${GDK_BACKEND:-}" ]]; then
+            export GDK_BACKEND="wayland"
+        fi
+        if [[ -z "${MOZ_ENABLE_WAYLAND:-}" ]]; then
+            export MOZ_ENABLE_WAYLAND="1"
+        fi
+    else
+        export XDG_SESSION_TYPE="x11"
+        if [[ -n "${DISPLAY:-}" && -z "${GDK_BACKEND:-}" ]]; then
+            export GDK_BACKEND="x11"
+        fi
+    fi
+fi
+
+if [[ -n "${DISABLE_WAYLAND:-}" ]]; then
+    if [[ -z "${GDK_BACKEND:-}" ]]; then
+        export GDK_BACKEND="x11"
+    fi
+fi
+
+if [ "$wayland_available" = true ]; then
+    export SPA_PLUGIN_DIR="$SNAP/usr/lib/$ARCH/spa-0.2"
+    if [[ -f "$SNAP/usr/share/pipewire/client.conf" ]]; then
+        export PIPEWIRE_CONFIG_NAME="$SNAP/usr/share/pipewire/client.conf"
+    fi
+    export PIPEWIRE_MODULE_DIR="$SNAP/usr/lib/$ARCH/pipewire-0.3"
+fi
+
+# Keep an array of data dirs, for looping through them
+IFS=':' read -r -a data_dirs_array <<< "$XDG_DATA_DIRS"
+
+# Font Config
+export FONTCONFIG_PATH="/etc/fonts"
+export FONTCONFIG_FILE="/etc/fonts/fonts.conf"
+
+# Clearing stale MIME data avoids native file dialog crashes with the newer GTK stack.
+if [ "$needs_update" = true ]; then
+  rm -rf "$SNAP_USER_DATA/.local/share/mime"
+fi
+
+# Gio modules and cache (including gsettings module)
+export GIO_MODULE_DIR="$SNAP_USER_COMMON/.cache/gio-modules"
+function compile_giomodules {
+  if [ -f "$1/glib-2.0/gio-querymodules" ]; then
+    rm -rf "$GIO_MODULE_DIR"
+    ensure_dir_exists "$GIO_MODULE_DIR"
+    ln -s "$SNAP"/usr/lib/"$ARCH"/gio/modules/*.so "$GIO_MODULE_DIR"
+    "$1/glib-2.0/gio-querymodules" "$GIO_MODULE_DIR"
+  fi
+}
+if [ "$needs_update" = true ]; then
+  async_exec compile_giomodules "/snap/core24/current/usr/lib/$ARCH"
+fi
+
+# Setup compiled gsettings schema
+export GSETTINGS_SCHEMA_DIR="$SNAP_USER_DATA/.local/share/glib-2.0/schemas"
+function compile_schemas {
+  if [ -f "$1" ]; then
+    rm -rf "$GSETTINGS_SCHEMA_DIR"
+    ensure_dir_exists "$GSETTINGS_SCHEMA_DIR"
+    for ((i = 0; i < ${#data_dirs_array[@]}; i++)); do
+      schema_dir="${data_dirs_array[$i]}/glib-2.0/schemas"
+      if [ -f "$schema_dir/gschemas.compiled" ]; then
+        # This directory already has compiled schemas
+        continue
+      fi
+      if [ -n "$(ls -A "$schema_dir"/*.xml 2>/dev/null)" ]; then
+        ln -s "$schema_dir"/*.xml "$GSETTINGS_SCHEMA_DIR"
+      fi
+      if [ -n "$(ls -A "$schema_dir"/*.override 2>/dev/null)" ]; then
+        ln -s "$schema_dir"/*.override "$GSETTINGS_SCHEMA_DIR"
+      fi
+    done
+    # Only compile schemas if we copied anything
+    if [ -n "$(ls -A "$GSETTINGS_SCHEMA_DIR"/*.xml "$GSETTINGS_SCHEMA_DIR"/*.override 2>/dev/null)" ]; then
+      "$1" "$GSETTINGS_SCHEMA_DIR"
+    fi
+  fi
+}
+if [ "$needs_update" = true ]; then
+  async_exec compile_schemas "/snap/core24/current/usr/lib/$ARCH/glib-2.0/glib-compile-schemas"
+fi
+
+# Gdk-pixbuf loaders
+export GDK_PIXBUF_MODULE_FILE="$SNAP_USER_COMMON/.cache/gdk-pixbuf-loaders.cache"
+export GDK_PIXBUF_MODULEDIR="$SNAP/usr/lib/$ARCH/gdk-pixbuf-2.0/2.10.0/loaders"
+if [ "$needs_update" = true ] || [ ! -f "$GDK_PIXBUF_MODULE_FILE" ]; then
+  rm -f "$GDK_PIXBUF_MODULE_FILE"
+  if [ -f "$SNAP/usr/lib/$ARCH/gdk-pixbuf-2.0/gdk-pixbuf-query-loaders" ]; then
+    async_exec "$SNAP/usr/lib/$ARCH/gdk-pixbuf-2.0/gdk-pixbuf-query-loaders" > "$GDK_PIXBUF_MODULE_FILE"
+  fi
+fi
+
+append_dir GTK_PATH "$SNAP/usr/lib/$ARCH/gtk-3.0"
+append_dir GTK_PATH "$SNAP/usr/lib/gtk-3.0"
+# We don't have gtk libraries in this path but
+# enforcing this environment variable will disallow
+# gtk binaries like `gtk-query-immodules` to not search
+# in system default library paths.
+# Based on https://gitlab.gnome.org/GNOME/gtk/-/blob/main/gtk/gtkmodules.c#L104-136
+export GTK_EXE_PREFIX="$SNAP/usr"
+
+# ibus and fcitx integration
+GTK_IM_MODULE_DIR="$SNAP_USER_COMMON/.cache/immodules"
+export GTK_IM_MODULE_FILE="$GTK_IM_MODULE_DIR/immodules.cache"
+# shellcheck disable=SC2154
+if [ "$needs_update" = true ]; then
+  rm -rf "$GTK_IM_MODULE_DIR"
+  ensure_dir_exists "$GTK_IM_MODULE_DIR"
+  ln -s "$SNAP"/usr/lib/"$ARCH"/gtk-3.0/3.0.0/immodules/*.so "$GTK_IM_MODULE_DIR"
+  async_exec "$SNAP/usr/lib/$ARCH/libgtk-3-0t64/gtk-query-immodules-3.0" > "$GTK_IM_MODULE_FILE"
+fi
+
+# shellcheck disable=SC2154
+[ "$needs_update" = true ] && echo "SNAP_DESKTOP_LAST_REVISION=$SNAP_VERSION" > "$SNAP_USER_DATA/.last_revision"
+
+wait_for_async_execs
+
+declare -a launch_args=()
+if [[ -n "${DISABLE_WAYLAND:-}" ]]; then
+    launch_args+=(--ozone-platform=x11)
+fi
+
+binary="$1"
+shift
+snap_libgl="$SNAP/usr/lib/dri:$SNAP/usr/lib/$ARCH/dri"
+if [[ -n "${LIBGL_DRIVERS_PATH:-}" ]]; then
+    snap_libgl="$snap_libgl:$LIBGL_DRIVERS_PATH"
+fi
+LIBGL_DRIVERS_PATH="$snap_libgl" exec "$binary" "${launch_args[@]}" "$@"

@@ -1,0 +1,25 @@
+{
+	"name": "thrice-checkout",
+	"displayName": "Thrice Checkout",
+	"description": "Git branch helpers. A dirty tree is refused because the stash, discard, or commit choice is unconfirmed.",
+	"version": "10.0.0",
+	"publisher": "thrice",
+	"license": "MIT",
+	"engines": {
+		"vscode": "*"
+	},
+	"activationEvents": [
+		"*"
+	],
+	"main": "./out/extension",
+	"scripts": {
+		"compile": "gulp compile-extension:thrice-checkout",
+		"watch": "gulp watch-extension:thrice-checkout"
+	},
+	"capabilities": {
+		"virtualWorkspaces": true,
+		"untrustedWorkspaces": {
+			"supported": true
+		}
+	}
+}

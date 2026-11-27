@@ -1,0 +1,43 @@
+{
+	"name": "thrice-protobuf",
+	"displayName": "Thrice Protobuf",
+	"description": "Protobuf language id and an original keyword grammar. Comment, string, and bracket rules are unconfirmed.",
+	"version": "10.0.0",
+	"publisher": "thrice",
+	"license": "MIT",
+	"engines": {
+		"vscode": "*"
+	},
+	"categories": ["Programming Languages"],
+	"capabilities": {
+		"virtualWorkspaces": true,
+		"untrustedWorkspaces": {
+			"supported": true
+		}
+	},
+	"contributes": {
+		"languages": [
+			{
+				"id": "protobuf",
+				"aliases": ["Protocol Buffers", "Protobuf", "protobuf"],
+				"extensions": [".proto"],
+				"configuration": "./language-configuration.json"
+			}
+		],
+		"grammars": [
+			{
+				"language": "protobuf",
+				"scopeName": "source.proto",
+				"path": "./syntaxes/proto.tmLanguage.json"
+			},
+			{
+				"scopeName": "markdown.protobuf.codeblock",
+				"path": "./syntaxes/markdown-proto.tmLanguage.json",
+				"injectTo": ["text.html.markdown"],
+				"embeddedLanguages": {
+					"meta.embedded.block.proto": "protobuf"
+				}
+			}
+		]
+	}
+}

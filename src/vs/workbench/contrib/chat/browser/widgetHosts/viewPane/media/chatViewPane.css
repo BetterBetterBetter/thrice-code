@@ -1,0 +1,663 @@
+/*---------------------------------------------------------------------------------------------
+ *  Copyright (c) Microsoft Corporation. All rights reserved.
+ *  Licensed under the MIT License. See License.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
+.voice-transcript-overlay-scrollable {
+	position: absolute !important;
+	top: 0;
+	left: 0;
+	right: 0;
+	bottom: 36px;
+	z-index: 10;
+	/* Let clicks pass through to the input editor unless there is scrollable transcript content */
+	pointer-events: none;
+	background: var(--vscode-input-background, transparent);
+	border-radius: inherit;
+	border-bottom-left-radius: 0;
+	border-bottom-right-radius: 0;
+}
+
+.voice-transcript-overlay-scrollable.has-transcript {
+	pointer-events: auto;
+}
+
+.voice-transcript-overlay {
+	height: 100%;
+	box-sizing: border-box;
+	padding: var(--vscode-spacing-size80) var(--vscode-spacing-size120);
+	font-size: var(--vscode-bodyFontSize);
+	line-height: 1.4;
+	word-break: break-word;
+	overflow: hidden;
+	overscroll-behavior: contain;
+}
+
+.voice-transcript-overlay .committed {
+	color: var(--vscode-foreground);
+}
+
+.voice-transcript-overlay .partial {
+	color: var(--vscode-foreground);
+	opacity: 0.6;
+	font-style: italic;
+}
+
+/* Placeholder text while listening: static, no shimmer animation. */
+.voice-transcript-overlay .listening {
+	color: var(--vscode-descriptionForeground);
+	font-style: italic;
+}
+
+.voice-transcript-overlay .assistant-text {
+	color: var(--vscode-descriptionForeground);
+	white-space: pre-wrap;
+}
+
+/* Overall styles */
+.chat-viewpane {
+	display: flex;
+	flex-direction: column;
+
+	/* wrapper that holds sessions + chat controls */
+	> .voice-agent-controls-wrapper {
+		display: flex;
+		flex-direction: column;
+		flex: 1;
+		min-height: 0;
+		min-width: 0;
+		overflow: hidden;
+	}
+
+	.chat-controls-container {
+		display: flex;
+		flex-direction: column;
+		flex: 1;
+		height: 100%;
+		min-height: 0;
+		min-width: 0;
+
+		.interactive-session {
+			flex: 1;
+			/* needed so that the chat input does not overflow and input grows over content above */
+			width: 100%;
+			min-height: 0;
+			min-width: 0;
+		}
+	}
+}
+
+/* Sessions control: either sidebar or stacked */
+.chat-viewpane.has-sessions-control .agent-sessions-container {
+	display: flex;
+	flex-direction: column;
+
+	.agent-sessions-title-container {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		font-size: 11px;
+		font-weight: 700;
+		text-transform: uppercase;
+
+		.agent-sessions-title {
+			cursor: pointer;
+			overflow: hidden;
+			text-overflow: ellipsis;
+			white-space: nowrap;
+		}
+	}
+
+	.agent-sessions-toolbar {
+
+		.action-item {
+			/* align with the title actions*/
+			margin-right: 4px;
+		}
+
+		&.filtered .action-label.codicon.codicon-filter {
+			/* indicate when sessions filter is enabled */
+			border-color: var(--vscode-inputOption-activeBorder);
+			color: var(--vscode-inputOption-activeForeground);
+			background-color: var(--vscode-inputOption-activeBackground);
+		}
+	}
+}
+
+/* Sessions control: stacked */
+.chat-viewpane.has-sessions-control.sessions-control-orientation-stacked {
+
+	.agent-sessions-container {
+		/* center it above the chat which has this max-width restriction */
+		max-width: 950px;
+		margin: 0 auto;
+		width: 100%;
+	}
+
+	.agent-sessions-new-button-container {
+		/* hide new session button when stacked */
+		display: none;
+	}
+
+	.agent-sessions-viewer.can-scroll-down > .monaco-list > .monaco-scrollable-element {
+		mask-image: linear-gradient(to bottom, black calc(100% - var(--vscode-spacing-size160)), transparent);
+	}
+}
+
+.monaco-workbench:is(.hc-black, .hc-light) .chat-viewpane.has-sessions-control.sessions-control-orientation-stacked .agent-sessions-viewer.can-scroll-down > .monaco-list > .monaco-scrollable-element {
+	mask-image: none;
+}
+
+/* Sessions control: side by side */
+.chat-viewpane.has-sessions-control.sessions-control-orientation-sidebyside {
+
+	&.chat-view-position-left > .voice-agent-controls-wrapper {
+		flex-direction: row;
+
+		.agent-sessions-container {
+			border-right: 1px solid var(--vscode-panel-border);
+		}
+	}
+
+	&.chat-view-position-right > .voice-agent-controls-wrapper {
+		flex-direction: row-reverse;
+
+		.agent-sessions-container {
+			border-left: 1px solid var(--vscode-panel-border);
+		}
+	}
+
+	.agent-sessions-new-button-container {
+		padding: 8px;
+	}
+}
+
+/* Sessions control: panel location */
+.chat-viewpane.has-sessions-control.chat-view-location-panel {
+
+	.agent-sessions-new-button-container {
+		/* hide new session button in the panel considering less vertical space */
+		display: none !important;
+	}
+}
+
+/*
+ * Padding rules for agent sessions elements based on:
+ * - orientation (stacked vs sidebyside)
+ * - view position (left vs right)
+ * - activity bar location (default vs other for auxiliarybar)
+ */
+.chat-viewpane.has-sessions-control {
+
+	/* Base padding: left-aligned content */
+	.agent-sessions-title-container {
+		padding: 0 8px 0 20px;
+	}
+
+	.agent-session-section {
+		padding: 0 6px 0 14px;
+	}
+
+	/* Stacked: symmetric padding */
+	&.sessions-control-orientation-stacked {
+
+		.agent-sessions-empty-filter-message {
+			padding-left: 20px;
+		}
+	}
+
+	/* Right position: symmetric padding */
+	&.sessions-control-orientation-sidebyside.chat-view-position-right {
+
+		.agent-sessions-title-container {
+			padding: 0 8px;
+		}
+
+		.agent-session-section {
+			padding: 0 6px 0 8px;
+		}
+	}
+
+	/* Auxiliarybar with non-default activity bar: tighter title padding */
+	&.activity-bar-location-other.chat-view-location-auxiliarybar {
+
+		.agent-sessions-title-container {
+			padding-right: 4px;
+		}
+
+		/* Right position needs adjusted left padding too */
+		&.sessions-control-orientation-sidebyside.chat-view-position-right {
+
+			.agent-sessions-title-container,
+			.agent-session-section {
+				padding-left: 8px;
+			}
+		}
+	}
+}
+
+/* Only the sessions show, of a list that a provider gives the Chat view, without its chat */
+.chat-viewpane.sessions-only .chat-controls-container {
+	display: none;
+}
+
+/* The editor part covers the old chat widget. Its tabs are the chat sessions. */
+.chat-viewpane.has-auxiliary-chat-editors {
+	position: relative;
+	overflow: hidden;
+	height: 100%;
+	background-color: var(--vscode-editor-background);
+}
+
+.chat-viewpane.has-auxiliary-chat-editors > .voice-agent-controls-wrapper {
+	visibility: hidden;
+}
+
+.chat-viewpane.has-auxiliary-chat-editors > .auxiliary-bar-chat-editors {
+	position: absolute;
+	inset: 0;
+	z-index: 1;
+	display: flex;
+	flex-direction: row;
+	min-width: 0;
+	min-height: 0;
+}
+
+/* Reversed chat: the sessions column sits on the outer (left) side. */
+.chat-viewpane.has-auxiliary-chat-editors > .auxiliary-bar-chat-editors.chat-history-at-start {
+	flex-direction: row-reverse;
+}
+
+.chat-viewpane.has-auxiliary-chat-editors .auxiliary-bar-chat-editors-surface {
+	position: relative;
+	flex: 1 1 auto;
+	min-width: 0;
+	height: 100%;
+	overflow: hidden;
+}
+
+/* The sessions button sits on the outer edge of the chat tabs, in the same slot the plus uses. */
+.chat-viewpane.has-auxiliary-chat-editors > .auxiliary-bar-chat-editors.chat-history-at-end .editor-group-container > .title {
+	padding-inline-end: 28px;
+	box-sizing: border-box;
+}
+
+.chat-viewpane.has-auxiliary-chat-editors > .auxiliary-bar-chat-editors.chat-history-at-start .editor-group-container > .title {
+	padding-inline-start: 28px;
+	box-sizing: border-box;
+}
+
+.chat-viewpane.has-auxiliary-chat-editors .auxiliary-bar-chat-editors-surface.part.editor > .content .editor-group-container > .title .tabs-container > .tab {
+	max-width: var(--chat-session-tab-max-width, 200px) !important;
+}
+
+.chat-viewpane.has-auxiliary-chat-editors .chat-history-toggle {
+	position: absolute;
+	top: 0;
+	z-index: 30;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 28px;
+	background-color: var(--modern-ui-connected-tab-strip-background, var(--vscode-editorGroupHeader-tabsBackground));
+}
+
+.chat-viewpane.has-auxiliary-chat-editors .chat-history-toggle .action-label {
+	background-color: transparent;
+}
+
+.chat-viewpane.has-auxiliary-chat-editors > .auxiliary-bar-chat-editors.chat-history-at-end .chat-history-toggle {
+	inset-inline-end: 2px;
+}
+
+.chat-viewpane.has-auxiliary-chat-editors > .auxiliary-bar-chat-editors.chat-history-at-start .chat-history-toggle {
+	inset-inline-start: 2px;
+}
+
+.chat-viewpane.has-auxiliary-chat-editors .chat-history-toggle .action-label:focus-visible {
+	outline: 1px dashed var(--vscode-toolbar-hoverOutline);
+	outline-offset: -1px;
+}
+
+/* The sessions column is part of the chat: closing the chat hides it too. */
+.chat-viewpane.has-auxiliary-chat-editors > .auxiliary-bar-chat-editors > .chat-session-history {
+	display: none;
+	flex: 0 0 auto;
+	height: 100%;
+	min-width: 0;
+	min-height: 0;
+	box-sizing: border-box;
+	flex-direction: column;
+	overflow: hidden;
+	background: var(--vscode-editor-background);
+	color: var(--vscode-foreground);
+}
+
+.chat-viewpane.has-auxiliary-chat-editors > .auxiliary-bar-chat-editors.chat-history-open > .chat-session-history {
+	display: flex;
+}
+
+.chat-viewpane.has-auxiliary-chat-editors > .auxiliary-bar-chat-editors.chat-history-open.chat-history-at-end > .chat-session-history {
+	border-inline-start: 1px solid var(--vscode-sideBar-border, var(--vscode-editorWidget-border, transparent));
+}
+
+.chat-viewpane.has-auxiliary-chat-editors > .auxiliary-bar-chat-editors.chat-history-open.chat-history-at-start > .chat-session-history {
+	border-inline-end: 1px solid var(--vscode-sideBar-border, var(--vscode-editorWidget-border, transparent));
+}
+
+.chat-viewpane.has-auxiliary-chat-editors .chat-session-history-toolbar {
+	display: flex;
+	flex: 0 0 auto;
+	flex-direction: column;
+	align-items: stretch;
+	gap: var(--vscode-spacing-size40);
+	padding: var(--vscode-spacing-size80) var(--vscode-spacing-size80) 0;
+}
+
+.chat-viewpane.has-auxiliary-chat-editors .chat-session-history-command {
+	display: flex;
+	align-items: center;
+	justify-content: flex-start;
+	gap: var(--vscode-spacing-size40);
+	flex: 0 0 auto;
+	width: 100%;
+	min-width: 0;
+	height: 28px;
+	padding: 0 var(--vscode-spacing-size80);
+	box-sizing: border-box;
+	border: 0;
+	border-radius: var(--vscode-cornerRadius-medium);
+	background: transparent;
+	color: inherit;
+	font: inherit;
+	cursor: pointer;
+}
+
+.chat-viewpane.has-auxiliary-chat-editors .chat-session-history-command:hover {
+	background-color: var(--vscode-toolbar-hoverBackground);
+	outline: 1px dashed var(--vscode-toolbar-hoverOutline);
+	outline-offset: -1px;
+}
+
+.chat-viewpane.has-auxiliary-chat-editors .chat-session-history-search {
+	display: none;
+	flex: 0 0 auto;
+	width: 100%;
+	height: 28px;
+	margin: 0;
+	padding: 0 var(--vscode-spacing-size80);
+	box-sizing: border-box;
+	border: 1px solid var(--vscode-input-border, transparent);
+	border-radius: var(--vscode-cornerRadius-medium);
+	background: var(--vscode-input-background);
+	color: var(--vscode-input-foreground);
+	font: inherit;
+}
+
+.chat-viewpane.has-auxiliary-chat-editors .chat-session-history.searching .chat-session-history-search {
+	display: block;
+}
+
+.chat-viewpane.has-auxiliary-chat-editors .chat-session-history-group-label {
+	padding: var(--vscode-spacing-size60) var(--vscode-spacing-size80) var(--vscode-spacing-size20);
+	font-size: var(--vscode-fontSize-label1);
+	font-weight: var(--vscode-fontWeight-semiBold);
+	color: var(--vscode-descriptionForeground);
+	text-transform: uppercase;
+}
+
+.chat-viewpane.has-auxiliary-chat-editors .chat-session-history-list {
+	flex: 1 1 auto;
+	overflow: auto;
+	min-height: 0;
+	margin-top: var(--vscode-spacing-size120);
+	padding: 0 var(--vscode-spacing-size80);
+}
+
+.chat-viewpane.has-auxiliary-chat-editors .chat-session-history-section {
+	display: flex;
+	flex-direction: column;
+	margin-bottom: var(--vscode-spacing-size80);
+}
+
+.chat-viewpane.has-auxiliary-chat-editors .chat-session-history-section-header {
+	display: flex;
+	align-items: center;
+	gap: var(--vscode-spacing-size40);
+	width: 100%;
+	height: 24px;
+	margin: 0 0 var(--vscode-spacing-size40);
+	padding: 0 var(--vscode-spacing-size40);
+	box-sizing: border-box;
+	border: 0;
+	border-radius: var(--vscode-cornerRadius-medium);
+	background: transparent;
+	color: var(--vscode-foreground);
+	font: inherit;
+	font-size: var(--vscode-fontSize-label1);
+	font-weight: var(--vscode-fontWeight-semiBold);
+	text-align: start;
+	cursor: pointer;
+}
+
+.chat-viewpane.has-auxiliary-chat-editors .chat-session-history-section-header:hover {
+	background-color: var(--vscode-toolbar-hoverBackground);
+}
+
+.chat-viewpane.has-auxiliary-chat-editors .chat-session-history-section-header:focus-visible {
+	outline: 1px solid var(--vscode-focusBorder);
+	outline-offset: -1px;
+}
+
+.chat-viewpane.has-auxiliary-chat-editors .chat-session-history-section-chevron {
+	flex: 0 0 auto;
+	font-size: 14px;
+	color: var(--vscode-icon-foreground);
+}
+
+.chat-viewpane.has-auxiliary-chat-editors .chat-session-history-section-label {
+	flex: 1 1 auto;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.chat-viewpane.has-auxiliary-chat-editors .chat-session-history-section-count {
+	flex: 0 0 auto;
+	min-width: 16px;
+	padding: 0 var(--vscode-spacing-size40);
+	box-sizing: border-box;
+	border-radius: 8px;
+	background: var(--vscode-badge-background);
+	color: var(--vscode-badge-foreground);
+	font-size: 11px;
+	font-weight: normal;
+	line-height: 16px;
+	text-align: center;
+}
+
+.chat-viewpane.has-auxiliary-chat-editors .chat-session-history-section-body {
+	display: flex;
+	flex-direction: column;
+}
+
+.chat-viewpane.has-auxiliary-chat-editors .chat-session-history-empty {
+	padding: var(--vscode-spacing-size80);
+	color: var(--vscode-descriptionForeground);
+}
+
+.chat-viewpane.has-auxiliary-chat-editors .chat-history-sash {
+	display: none;
+}
+
+.chat-viewpane.has-auxiliary-chat-editors > .auxiliary-bar-chat-editors.chat-history-open > .chat-history-sash {
+	display: block;
+}
+
+.chat-viewpane.has-auxiliary-chat-editors .chat-session-history-children {
+	display: flex;
+	flex-direction: column;
+	padding-inline-start: 20px;
+}
+
+.chat-viewpane.has-auxiliary-chat-editors .chat-session-history-children-toggle {
+	flex: 0 0 auto;
+	width: 16px;
+	height: 16px;
+	margin: 0;
+	padding: 0;
+	border: 0;
+	background: transparent;
+	color: var(--vscode-icon-foreground);
+	cursor: pointer;
+}
+
+.chat-viewpane.has-auxiliary-chat-editors .chat-session-history-item {
+	position: relative;
+	display: flex;
+	align-items: center;
+	gap: var(--vscode-spacing-size40);
+	width: 100%;
+	min-width: 0;
+	height: 28px;
+	box-sizing: border-box;
+	margin: 0 0 var(--vscode-spacing-size40);
+	padding: 0 var(--vscode-spacing-size80);
+	border: 0;
+	border-radius: var(--vscode-cornerRadius-medium);
+	background: transparent;
+	color: inherit;
+	font: inherit;
+	text-align: start;
+	cursor: pointer;
+}
+
+.chat-viewpane.has-auxiliary-chat-editors .chat-session-history-item:hover {
+	background-color: var(--vscode-toolbar-hoverBackground);
+	outline: 1px dashed var(--vscode-toolbar-hoverOutline);
+	outline-offset: -1px;
+}
+
+.chat-viewpane.has-auxiliary-chat-editors .chat-session-history-item.active {
+	background: var(--vscode-list-inactiveSelectionBackground);
+	outline: var(--vscode-strokeThickness) solid var(--vscode-list-inactiveFocusOutline, transparent);
+	outline-offset: calc(var(--vscode-strokeThickness) * -1);
+}
+
+.chat-viewpane.has-auxiliary-chat-editors .chat-session-history-mark {
+	position: relative;
+	flex: 0 0 auto;
+	width: 16px;
+	height: 16px;
+}
+
+.chat-viewpane.has-auxiliary-chat-editors .chat-session-history-icon {
+	display: block;
+	width: 16px;
+	height: 16px;
+	font-size: 16px;
+}
+
+.chat-viewpane.has-auxiliary-chat-editors .chat-session-history-status,
+.chat-viewpane.has-auxiliary-chat-editors .monaco-icon-label.chat-session-working::after,
+.chat-viewpane.has-auxiliary-chat-editors .monaco-icon-label.chat-session-finished::after {
+	width: 6px;
+	height: 6px;
+	border-radius: 50%;
+	box-shadow: 0 0 0 1.5px var(--vscode-editor-background);
+	pointer-events: none;
+}
+
+.chat-viewpane.has-auxiliary-chat-editors .chat-session-history-status {
+	position: absolute;
+	right: -2px;
+	bottom: -2px;
+}
+
+.chat-viewpane.has-auxiliary-chat-editors .monaco-icon-label.chat-session-working,
+.chat-viewpane.has-auxiliary-chat-editors .monaco-icon-label.chat-session-finished {
+	position: relative;
+}
+
+.chat-viewpane.has-auxiliary-chat-editors .monaco-icon-label.chat-session-working::after,
+.chat-viewpane.has-auxiliary-chat-editors .monaco-icon-label.chat-session-finished::after {
+	content: '';
+	position: absolute;
+	z-index: 2;
+	inset-inline-start: 8px;
+	top: calc(50% + 1px);
+}
+
+.chat-viewpane.has-auxiliary-chat-editors .chat-session-history-status.chat-session-working,
+.chat-viewpane.has-auxiliary-chat-editors .monaco-icon-label.chat-session-working::after {
+	background: var(--vscode-textLink-foreground);
+}
+
+.chat-viewpane.has-auxiliary-chat-editors .chat-session-history-status.chat-session-finished,
+.chat-viewpane.has-auxiliary-chat-editors .monaco-icon-label.chat-session-finished::after {
+	background: var(--vscode-testing-iconPassed, var(--vscode-charts-green));
+}
+
+.chat-viewpane.has-auxiliary-chat-editors .tab-label > .monaco-icon-label-iconpath.codicon[class*="codicon-thrice-logo-"] {
+	width: 13px;
+	height: 13px;
+	font-size: 13px;
+}
+
+.chat-viewpane.has-auxiliary-chat-editors .chat-session-history-title {
+	flex: 1 1 auto;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.chat-viewpane.has-auxiliary-chat-editors .chat-session-history-time {
+	flex: 0 0 auto;
+	margin-inline-start: auto;
+	font-size: 11px;
+	color: var(--vscode-descriptionForeground);
+}
+
+.chat-viewpane.has-auxiliary-chat-editors .chat-session-history-pin {
+	flex: 0 0 auto;
+	font-size: 12px;
+	color: var(--vscode-descriptionForeground);
+}
+
+.chat-viewpane.has-auxiliary-chat-editors .chat-session-history-more {
+	display: none;
+	position: absolute;
+	z-index: 1;
+	inset-inline-end: 6px;
+	top: 50%;
+	width: 22px;
+	height: 22px;
+	margin: 0;
+	padding: 0;
+	transform: translateY(-50%);
+	border: 0;
+	border-radius: var(--vscode-cornerRadius-small);
+	background: var(--vscode-list-hoverBackground);
+	color: var(--vscode-icon-foreground);
+	cursor: pointer;
+}
+
+.chat-viewpane.has-auxiliary-chat-editors .chat-session-history-item:hover > .chat-session-history-more,
+.chat-viewpane.has-auxiliary-chat-editors .chat-session-history-item:focus-within > .chat-session-history-more,
+.chat-viewpane.has-auxiliary-chat-editors .chat-session-history-item.menu-open > .chat-session-history-more {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+}
+
+.chat-viewpane.has-auxiliary-chat-editors .chat-session-history-more:hover {
+	background: var(--vscode-toolbar-hoverBackground);
+}
+
+.chat-viewpane.has-auxiliary-chat-editors .chat-session-history-item:hover > .chat-session-history-time,
+.chat-viewpane.has-auxiliary-chat-editors .chat-session-history-item:focus-within > .chat-session-history-time,
+.chat-viewpane.has-auxiliary-chat-editors .chat-session-history-item.menu-open > .chat-session-history-time {
+	visibility: hidden;
+}

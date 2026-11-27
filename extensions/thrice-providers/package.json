@@ -1,0 +1,129 @@
+{
+	"name": "thrice-providers",
+	"displayName": "Thrice Providers",
+	"description": "Built-in AgentCLI hubs. Extra models use the same instance shape as T3 Code.",
+	"version": "1.0.0",
+	"publisher": "thrice",
+	"license": "MIT",
+	"engines": {
+		"vscode": "*"
+	},
+	"enabledApiProposals": [
+		"defaultChatParticipant",
+		"chatParticipantAdditions",
+		"chatParticipantPrivate"
+	],
+	"activationEvents": [
+		"onStartupFinished",
+		"onCommand:thrice.providers.add"
+	],
+	"main": "./out/extension",
+	"capabilities": {
+		"virtualWorkspaces": true,
+		"untrustedWorkspaces": {
+			"supported": true
+		}
+	},
+	"contributes": {
+		"commands": [
+			{
+				"command": "thrice.providers.add",
+				"title": "Add new provider",
+				"category": "Thrice"
+			}
+		],
+		"languageModelChatProviders": [
+			{
+				"vendor": "claude-hub",
+				"displayName": "Claude Hub",
+				"icon": "$(claude)"
+			},
+			{
+				"vendor": "codex-hub",
+				"displayName": "Codex Hub",
+				"icon": "$(openai)"
+			},
+			{
+				"vendor": "grok-hub",
+				"displayName": "Grok Hub",
+				"icon": "$(xai)"
+			}
+		],
+		"chatParticipants": [
+			{
+				"id": "thrice.providers.chat",
+				"name": "thrice",
+				"fullName": "Thrice",
+				"description": "Chat through the built-in AgentCLI hubs.",
+				"isDefault": true,
+				"modes": ["ask", "edit", "agent"]
+			}
+		],
+		"configuration": {
+			"title": "Thrice Providers",
+			"properties": {
+				"thrice.providers.instances": {
+					"type": "array",
+					"default": [],
+					"scope": "application",
+					"description": "Extra provider instances, in the same shape T3 Code stores. The AgentCLI hubs are already included. An entry with the same id replaces that hub.",
+					"items": {
+						"type": "object",
+						"required": ["id", "driver", "displayName"],
+						"properties": {
+							"id": {
+								"type": "string",
+								"description": "Stable id, such as claude-hub."
+							},
+							"driver": {
+								"type": "string",
+								"enum": ["claude", "codex", "opencode", "cursor", "grok", "antigravity", "muse", "pi", "fx", "kiro", "acp"],
+								"description": "Which installed CLI runs this instance."
+							},
+							"displayName": {
+								"type": "string",
+								"description": "Name shown as the provider. Models are listed inside it."
+							},
+							"enabled": {
+								"type": "boolean",
+								"default": true
+							},
+							"command": {
+								"type": "string",
+								"description": "Executable name or path. Defaults to the driver CLI."
+							},
+							"launchArgs": {
+								"type": "array",
+								"items": { "type": "string" },
+								"description": "Arguments placed before the driver's own prompt arguments."
+							},
+							"environment": {
+								"type": "array",
+								"description": "Environment entries for this instance. Values stay in your user settings.",
+								"items": {
+									"type": "object",
+									"required": ["name", "value"],
+									"properties": {
+										"name": { "type": "string" },
+										"value": { "type": "string" }
+									}
+								}
+							}
+						}
+					}
+				},
+				"thrice.chat.mode": {
+					"type": "string",
+					"enum": ["interactive", "plan", "ask", "debug", "spec", "triage", "background"],
+					"default": "interactive",
+					"description": "How the next chat turn runs. Interactive and Debug change the project, Plan and Spec only write, Ask and Triage only answer, and Background finishes without waiting."
+				},
+				"thrice.chat.ghostText.enabled": {
+					"type": "boolean",
+					"default": true,
+					"description": "Suggest the rest of a chat message from previous messages while you type."
+				}
+			}
+		}
+	}
+}

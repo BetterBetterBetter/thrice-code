@@ -1,0 +1,29 @@
+{
+	"name": "thrice-always-local",
+	"displayName": "Thrice Always Local",
+	"description": "JSON schemas for permissions and environment files. The commit-message handler is unconfirmed and is not registered.",
+	"version": "10.0.0",
+	"publisher": "thrice",
+	"license": "MIT",
+	"engines": {
+		"vscode": "*"
+	},
+	"capabilities": {
+		"virtualWorkspaces": true,
+		"untrustedWorkspaces": {
+			"supported": true
+		}
+	},
+	"contributes": {
+		"jsonValidation": [
+			{
+				"fileMatch": "**/.cursor/permissions.json",
+				"url": "./schemas/permissions.schema.json"
+			},
+			{
+				"fileMatch": "**/.cursor/environment.json",
+				"url": "./schemas/environment.schema.json"
+			}
+		]
+	}
+}

@@ -1,0 +1,42 @@
+{
+	"$schema": "http://json-schema.org/draft-07/schema#",
+	"allowComments": true,
+	"allowTrailingCommas": true,
+	"unevaluatedProperties": false,
+	"properties": {
+		"mcpAllowlist": {
+			"type": "array",
+			"items": {
+				"type": "string",
+				"pattern": "^(\\*|[^:]+):(\\*|[^:]+)$"
+			}
+		},
+		"terminalAllowlist": {
+			"type": "array",
+			"items": {
+				"type": "string"
+			}
+		},
+		"approvalMode": {
+			"type": "string",
+			"enum": ["allowlist", "unrestricted", "manual"],
+			"description": "manual maps to Ask Every Time."
+		},
+		"autoRun": {
+			"type": "object",
+			"unevaluatedProperties": false,
+			"properties": {
+				"allow_instructions": {},
+				"block_instructions": {}
+			}
+		},
+		"autoReview": {
+			"type": "object",
+			"unevaluatedProperties": false,
+			"properties": {
+				"allow_instructions": {},
+				"block_instructions": {}
+			}
+		}
+	}
+}

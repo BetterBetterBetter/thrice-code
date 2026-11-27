@@ -1,0 +1,69 @@
+{
+	"name": "thrice-ndjson-ingest",
+	"displayName": "Thrice NDJSON Ingest",
+	"description": "Starts and stops an ingest listener state. HTTP paths stay unanswered.",
+	"version": "10.0.0",
+	"publisher": "thrice",
+	"license": "MIT",
+	"engines": {
+		"vscode": "*"
+	},
+	"activationEvents": [
+		"onCommand:thrice.ndjson.start",
+		"onCommand:thrice.ndjson.stop",
+		"onCommand:thrice.ndjson.showStatus",
+		"onCommand:thrice.ndjson.reassignPort"
+	],
+	"main": "./out/extension",
+	"scripts": {
+		"compile": "gulp compile-extension:thrice-ndjson-ingest",
+		"watch": "gulp watch-extension:thrice-ndjson-ingest"
+	},
+	"capabilities": {
+		"virtualWorkspaces": true,
+		"untrustedWorkspaces": {
+			"supported": true
+		}
+	},
+	"contributes": {
+		"commands": [
+			{
+				"command": "thrice.ndjson.start",
+				"title": "Start Server",
+				"category": "Thrice NDJSON Ingest"
+			},
+			{
+				"command": "thrice.ndjson.stop",
+				"title": "Stop Server",
+				"category": "Thrice NDJSON Ingest"
+			},
+			{
+				"command": "thrice.ndjson.showStatus",
+				"title": "Show server info",
+				"category": "Thrice NDJSON Ingest"
+			},
+			{
+				"command": "thrice.ndjson.reassignPort",
+				"title": "Reassign port and restart server",
+				"category": "Thrice NDJSON Ingest"
+			}
+		],
+		"configuration": {
+			"title": "Thrice NDJSON Ingest",
+			"properties": {
+				"thrice.ndjson.port": {
+					"type": "number",
+					"default": 0,
+					"minimum": 0,
+					"maximum": 65535,
+					"description": "0 picks the first free port from 7242 through 7942."
+				},
+				"thrice.ndjson.bindAddress": {
+					"type": "string",
+					"default": "127.0.0.1",
+					"description": "A non-loopback address exposes the ingest endpoint."
+				}
+			}
+		}
+	}
+}

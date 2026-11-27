@@ -1,0 +1,8 @@
+{
+  "version": 1,
+  "docs_root": "docs",
+  "skill_roots": [
+    "/Users/ryan/.jev/skill-library",
+    "/Users/ryan/tools/jev_thrice/skill-library"
+  ]
+}

@@ -1,0 +1,88 @@
+/*---------------------------------------------------------------------------------------------
+ *  Copyright (c) Microsoft Corporation. All rights reserved.
+ *  Licensed under the MIT License. See License.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
+
+.chat-markdown-part {
+
+	h1,
+	h2,
+	h3,
+	h4,
+	h5,
+	h6 {
+		line-height: normal;
+	}
+
+	.katex-display .katex {
+		margin: auto;
+		width: fit-content;
+		overflow: hidden;
+	}
+}
+
+.thrice-chart {
+	margin: 8px 0;
+	padding: 8px 10px;
+	border: 1px solid var(--vscode-chat-requestBorder, var(--vscode-input-border, transparent));
+	border-radius: 6px;
+	background: var(--vscode-editorWidget-background);
+}
+
+.thrice-chart-toolbar {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	margin-bottom: 8px;
+}
+
+.thrice-chart-title {
+	flex: 1;
+	font-weight: 600;
+}
+
+.thrice-chart-toolbar button {
+	border: none;
+	background: transparent;
+	color: var(--vscode-textLink-foreground);
+	cursor: pointer;
+	font: inherit;
+}
+
+.thrice-chart-plot {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+	max-height: 180px;
+	overflow: auto;
+}
+
+.thrice-chart.is-expanded .thrice-chart-plot {
+	max-height: none;
+}
+
+.thrice-chart-row {
+	display: grid;
+	grid-template-columns: minmax(72px, 140px) 1fr auto;
+	gap: 8px;
+	align-items: center;
+}
+
+.thrice-chart-track {
+	display: block;
+	height: 8px;
+	background: var(--vscode-editor-background);
+	border-radius: 4px;
+	overflow: hidden;
+}
+
+.thrice-chart-bar {
+	display: block;
+	height: 100%;
+	background: var(--vscode-charts-blue, var(--vscode-textLink-foreground));
+}
+
+.thrice-chart-error {
+	color: var(--vscode-errorForeground);
+}

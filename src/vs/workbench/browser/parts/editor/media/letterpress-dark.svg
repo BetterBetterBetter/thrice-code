@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="260" height="260" opacity="0.28" fill="none">
+  <defs>
+    <mask id="thrice-cut" maskUnits="userSpaceOnUse" x="0" y="0" width="1024" height="1024">
+      <rect width="1024" height="1024" fill="#fff"/>
+      <path fill="#000" fill-rule="evenodd" transform="translate(0 -42)" d="M512,185.055L861.72,790.785L162.28,790.785L512,185.055ZM512,307.315L268.16,729.655L755.84,729.655L512,307.315Z"/>
+    </mask>
+  </defs>
+  <g mask="url(#thrice-cut)">
+    <g transform="translate(0 -42)">
+      <circle cx="512" cy="588.875" r="250.07" fill="none" stroke="#fff" stroke-width="31.49"/>
+    </g>
+  </g>
+  <g transform="translate(0 -19.305)">
+    <path fill="#fff" fill-rule="evenodd" d="M512,192L836.05,753.27L187.95,753.27L512,192ZM512,254.98L242.49,721.78L781.51,721.78L512,254.98Z"/>
+    <path fill="none" stroke="#fff" stroke-width="33.07" stroke-miterlimit="10" d="M439.62,533.28L508.98,593.6L439.62,653.91"/>
+    <path fill="none" stroke="#fff" stroke-width="33.07" stroke-miterlimit="10" d="M527.08,653.91L599.45,653.91"/>
+  </g>
+</svg>

@@ -1,0 +1,34 @@
+{
+	"name": "thrice-resolver",
+	"displayName": "Thrice Resolver",
+	"description": "Labels background-composer remote paths. The server URL and failure text are unconfirmed.",
+	"version": "10.0.0",
+	"publisher": "thrice",
+	"license": "MIT",
+	"engines": {
+		"vscode": "*"
+	},
+	"activationEvents": [
+		"onResolveRemoteAuthority:background-composer"
+	],
+	"capabilities": {
+		"virtualWorkspaces": true,
+		"untrustedWorkspaces": {
+			"supported": true
+		}
+	},
+	"contributes": {
+		"resourceLabelFormatters": [
+			{
+				"scheme": "vscode-remote",
+				"authority": "background-composer+*",
+				"formatting": {
+					"label": "${path}",
+					"separator": "/",
+					"tildify": true,
+					"workspaceSuffix": "cloud-agent"
+				}
+			}
+		]
+	}
+}

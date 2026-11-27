@@ -1,0 +1,82 @@
+{
+	"name": "thrice-retrieval",
+	"displayName": "Thrice Retrieval",
+	"description": "Ignore-file language ids and developer commands. Index format and snapshot payload are unconfirmed.",
+	"version": "10.0.0",
+	"publisher": "thrice",
+	"license": "MIT",
+	"engines": {
+		"vscode": "*"
+	},
+	"activationEvents": [
+		"onStartupFinished"
+	],
+	"main": "./out/extension",
+	"scripts": {
+		"compile": "gulp compile-extension:thrice-retrieval",
+		"watch": "gulp watch-extension:thrice-retrieval"
+	},
+	"capabilities": {
+		"virtualWorkspaces": true,
+		"untrustedWorkspaces": {
+			"supported": true
+		}
+	},
+	"contributes": {
+		"commands": [
+			{
+				"command": "thrice.retrieval.grepClient.debug",
+				"title": "Debug Grep Client",
+				"category": "Developer"
+			},
+			{
+				"command": "thrice.retrieval.codebaseTelemetry.triggerSnapshot",
+				"title": "Trigger Codebase Snapshot",
+				"category": "Developer"
+			},
+			{
+				"command": "thrice.retrieval.codebaseTelemetry.reportComposerRequest",
+				"title": "Report Composer Request to Codebase Telemetry",
+				"category": "Developer",
+				"enablement": "false"
+			}
+		],
+		"menus": {
+			"commandPalette": [
+				{
+					"command": "thrice.retrieval.grepClient.debug",
+					"when": "isDevelopment"
+				},
+				{
+					"command": "thrice.retrieval.codebaseTelemetry.triggerSnapshot",
+					"when": "isDevelopment"
+				},
+				{
+					"command": "thrice.retrieval.codebaseTelemetry.reportComposerRequest",
+					"when": "false"
+				}
+			]
+		},
+		"configuration": {
+			"title": "Thrice Retrieval",
+			"properties": {
+				"thrice.retrieval.canAttemptGithubLogin": {
+					"type": "boolean",
+					"default": true,
+					"scope": "resource",
+					"description": "Whether retrieval may attempt a GitHub login. The login call itself is unconfirmed."
+				}
+			}
+		},
+		"languages": [
+			{
+				"id": "ignore",
+				"filenames": [".cursorignore"]
+			},
+			{
+				"id": "ignore",
+				"filenames": [".cursorindexingignore"]
+			}
+		]
+	}
+}

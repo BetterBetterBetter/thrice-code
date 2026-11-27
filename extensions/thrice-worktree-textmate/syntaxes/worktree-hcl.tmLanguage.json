@@ -1,0 +1,9 @@
+{
+  "scopeName": "source.worktree-hcl",
+  "patterns": [
+    {
+      "match": "\\b(resource|variable|module|output|locals|terraform|provider|data)\\b",
+      "name": "keyword.other.worktree-hcl"
+    }
+  ]
+}

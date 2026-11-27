@@ -1,0 +1,25 @@
+{
+	"$schema": "http://json-schema.org/draft-07/schema#",
+	"allowComments": true,
+	"allowTrailingCommas": true,
+	"unevaluatedProperties": false,
+	"properties": {
+		"name": {},
+		"user": {},
+		"install": {},
+		"start": {},
+		"repositoryDependencies": {},
+		"disableAllMcpServers": {},
+		"mcpServerAllowlist": {},
+		"egressAllowlist": {},
+		"egressMode": {},
+		"chromeExecutablePath": {},
+		"enable_testing": {},
+		"ports": {},
+		"terminals": {},
+		"build": {},
+		"image": {},
+		"snapshot": {},
+		"agentCanUpdateSnapshot": {}
+	}
+}

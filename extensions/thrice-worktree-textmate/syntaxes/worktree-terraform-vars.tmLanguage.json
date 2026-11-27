@@ -1,0 +1,9 @@
+{
+  "scopeName": "source.worktree-terraform-vars",
+  "patterns": [
+    {
+      "match": "\\b(resource|variable|module|output|locals|terraform|provider|data)\\b",
+      "name": "keyword.other.worktree-terraform-vars"
+    }
+  ]
+}

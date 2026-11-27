@@ -1,0 +1,25 @@
+{
+	"name": "thrice-explorer",
+	"displayName": "Thrice Explorer",
+	"description": "Classifies workspace entries with the confirmed kind labels. The ignore filename is unconfirmed.",
+	"version": "10.0.0",
+	"publisher": "thrice",
+	"license": "MIT",
+	"engines": {
+		"vscode": "*"
+	},
+	"activationEvents": [
+		"onStartupFinished"
+	],
+	"main": "./out/extension",
+	"scripts": {
+		"compile": "gulp compile-extension:thrice-explorer",
+		"watch": "gulp watch-extension:thrice-explorer"
+	},
+	"capabilities": {
+		"virtualWorkspaces": true,
+		"untrustedWorkspaces": {
+			"supported": true
+		}
+	}
+}
